@@ -1,0 +1,437 @@
+let EPSILON: f32 = 0.0000001;
+let MAX_T: f32 = 100000.0;
+let LEAF_SIZE: i32 = 4;
+let M_PI: f32 = 3.141592653589793;
+let M_TAU: f32 = 6.283185307179586;
+let INV_PI: f32 = 0.3183098861837907;
+let NUM_BOUNCES: i32 = 4;
+let NO_HIT_IDX: i32 = -1;
+
+var<private> seed: u32;
+var<private> stack: array<i32, 32>;
+
+// Keep vertex positions separate from other "attributes" to maximize locality during traversal.
+struct Triangle {
+  v1: vec3<f32>;
+  v2: vec3<f32>;
+  v3: vec3<f32>;
+  [[align(16)]] matId: i32;
+};
+
+struct VertexAttribute {
+  tangent: vec3<f32>;
+  bitangent: vec3<f32>;
+  normal: vec3<f32>;
+  uv: vec2<f32>;
+};
+
+struct VertexAttributes {
+  attributes: [[stride(192)]] array<array<VertexAttribute, 3>>;
+};
+
+struct MaterialIndex {
+  diffMap: i32;
+  metRoughMap: i32;
+  normMap: i32;
+  emitMap: i32;
+};
+
+struct MaterialIndices {
+  indices: [[stride(16)]] array<MaterialIndex>;
+};
+
+struct Node {
+  index: i32;
+  left: i32;
+  right: i32;
+  triangles: i32;
+  boxMin: vec3<f32>;
+  boxMax: vec3<f32>;
+};
+
+struct BVH {
+  nodes: [[stride(48)]] array<Node>;
+};
+
+struct Triangles {
+  triangles: [[stride(64)]] array<Triangle>;
+};
+
+struct Ray {
+  origin: vec3<f32>;
+  dir: vec3<f32>;
+};
+
+struct Hit {
+  t: f32;
+  index: i32;
+  tests: f32;
+  bary: vec3<f32>;
+};
+
+struct State {
+  eye: Ray;
+  samples: i32;
+  fov: f32;
+  envTheta: f32;
+};
+
+struct RadianceBin {
+  x0: f32;
+  y0: f32;
+  x1: f32;
+  y1: f32;
+};
+
+struct RadianceBins {
+  bins: [[stride(16)]] array<RadianceBin>;
+};
+
+struct Sample {
+  dir: vec3<f32>;
+  pdf: f32;
+  J: f32;
+};
+
+[[group(0), binding(0)]] var inputTex : texture_2d<f32>;
+[[group(0), binding(1)]] var outputTex : texture_storage_2d<rgba32float, write>;
+
+[[group(1), binding(0)]] var<storage, read> bvh: BVH;
+[[group(1), binding(1)]] var<storage, read> triangles: Triangles;
+[[group(1), binding(2)]] var<storage, read> attrs: VertexAttributes;
+[[group(1), binding(3)]] var<storage, read> materials: MaterialIndices;
+[[group(1), binding(4)]] var atlasTex: texture_2d_array<f32>;
+[[group(1), binding(5)]] var envTex: texture_2d<f32>;
+[[group(1), binding(6)]] var<storage, read> envRadiance: RadianceBins;
+
+[[group(2), binding(0)]] var<uniform> state: State;
+[[group(2), binding(1)]] var atlasSampler: sampler;
+[[group(2), binding(2)]] var envSampler: sampler;
+
+fn hash() -> u32 {
+  //Jarzynski and Olano Hash
+  var state = seed;
+  seed = seed * 747796405u + 2891336453u;
+  var word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+  return (word >> 22u) ^ word;
+}
+
+fn rand() -> f32 {
+  return f32(hash()) / 4294967296.0;
+}
+
+fn rayBoxIntersect(node: Node, ray: Ray) -> f32 {
+  let inverse = 1.0 / ray.dir;
+  let t1 = (node.boxMin - ray.origin) * inverse;
+  let t2 = (node.boxMax - ray.origin) * inverse;
+  let minT = min(t1, t2);
+  let maxT = max(t1, t2);
+  let tMax = min(min(maxT.x, maxT.y),maxT.z);
+  let tMin = max(max(minT.x, minT.y),minT.z);
+  return select(MAX_T, tMin, tMax >= tMin && tMax > 0.0);
+}
+
+fn rayTriangleIntersect(ray: Ray, tri: Triangle, bary: ptr<function, vec3<f32>>) -> f32 {
+  let e1: vec3<f32> = tri.v2 - tri.v1;
+  let e2: vec3<f32> = tri.v3 - tri.v1;
+  let p: vec3<f32> = cross(ray.dir, e2);
+  let det: f32 = dot(e1, p);
+  if(abs(det) < EPSILON){return MAX_T;}
+  let invDet: f32 = 1f / det;
+  let t: vec3<f32> = ray.origin - tri.v1;
+  let u: f32 = dot(t, p) * invDet;
+  if(u < 0f || u > 1f){return MAX_T;}
+  let q: vec3<f32> = cross(t, e1);
+  let v: f32 = dot(ray.dir, q) * invDet;
+  if(v < 0f || u + v > 1f){return MAX_T;}
+  let dist: f32 = dot(e2, q) * invDet;
+  (*bary) = vec3<f32>(1f - u - v, u, v);
+  return select(MAX_T, dist, dist > EPSILON);
+}
+
+fn processLeaf(leaf: Node, ray: Ray, result: ptr<function, Hit>){
+  var i: i32 = 0;
+  loop {
+    if (i >= LEAF_SIZE) { break;}
+    var bary = vec3<f32>();
+    let tri: Triangle = triangles.triangles[leaf.triangles + i];
+    let res: f32 = rayTriangleIntersect(ray, tri, &bary);
+    (*result).tests = (*result).tests + 1f;
+    if(res < (*result).t){
+      (*result).index = leaf.triangles + i;
+      (*result).t = res;
+      (*result).bary = bary;
+    }
+    i = i + 1;
+  }
+}
+
+let ENV_THETA = 0.5;
+
+fn envColor(dir: vec3<f32>) -> vec3<f32> {
+  let c = vec2<f32>(ENV_THETA + atan2(dir.z, dir.x) / M_TAU, asin(-dir.y) * INV_PI + 0.5);
+  let rgbe = textureSampleLevel(envTex, envSampler, c, 0f);
+  return rgbe.rgb * pow(2.0, rgbe.a * 255.0 - 128.0);
+}
+
+// Solid angle formulation; should reduce clumping near high latitudes
+fn sampleEnv2(gid: vec3<u32>) -> Sample {
+  let numBins = arrayLength(&envRadiance.bins);
+  let idx = i32(hash() % numBins);
+  //let idx = i32((gid.y * 1920u + gid.x + u32(state.samples))  % numBins);
+  let bin = envRadiance.bins[idx];
+  let u = -ENV_THETA + (bin.x1 - bin.x0) * rand() + bin.x0;
+  let h0 = cos(bin.y0 * M_PI);
+  let h1 = cos(bin.y1 * M_PI);
+  let hi = (h1 - h0) * rand() + h0;
+  let theta = u * M_TAU;
+  let phi = acos(hi);
+  let sinPhi = sin(phi);
+  let dir = vec3<f32>(cos(theta) * sinPhi, cos(phi), sin(theta) * sinPhi);
+  let segmentArea = M_TAU * (h1 - h0) * (bin.x1 - bin.x0);
+  let nominal: f32 = 1f / f32(numBins);
+  //let pdf = nominal / (abs(segmentArea));
+  let pdf = nominal / (abs(segmentArea));
+  return Sample(dir, pdf, sinPhi);
+} 
+
+// UV space formulation
+// fn sampleEnv(normal: vec3<f32>) -> Sample {
+//   let numBins = f32(arrayLength(&envRadiance.bins));
+//   let idx = i32(numBins * rand());
+//   let bin = envRadiance.bins[idx];
+//   let uv: vec2<f32> = vec2<f32>(-ENV_THETA, 0f) + vec2<f32>(
+//     (bin.x1 - bin.x0) * rand() + bin.x0, 
+//     (bin.y1 - bin.y0) * rand() + bin.y0
+//   );
+//   let theta = uv.x * M_TAU;
+//   let phi = uv.y * M_PI;
+//   let sinPhi = sin(phi);
+//   let dir = vec3<f32>(cos(theta) * sinPhi, cos(phi), sin(theta) * sinPhi);
+//   let nominal: f32 = 1f / numBins;
+//   let pdf = nominal / ((bin.x1 - bin.x0) * (bin.y1 - bin.y0) * M_TAU * M_PI * sinPhi);
+//   return Sample(dir, pdf);
+// }
+
+fn sampleLambert(normal: vec3<f32>) -> Sample {
+  let up = select(vec3<f32>(1f, 0f, 0f), vec3<f32>(0f, 0f, 1f), abs(normal.z) < 0.99);
+  let tangent = normalize(cross(up, normal));
+  let bitangent = cross(normal, tangent);
+	let r: f32 = sqrt(rand());
+	let phi: f32 = M_TAU * rand();
+	let x = r * cos(phi);
+	let y = r * sin(phi);
+	let z = sqrt(max(0.0, 1.0 - x*x - y*y));
+	let dir = mat3x3<f32>(tangent, bitangent, normal) * vec3<f32>(x, y, z);
+  let pdf = max(dot(dir, normal), 0f) * INV_PI;
+  return Sample(dir, pdf, 1f);
+}
+
+fn evalLambert(diffuse: vec3<f32>, n: vec3<f32>, sample: Sample) -> vec3<f32> {
+  // Lambertian BRDF = Albedo / Pi
+  // TODO: the math can be simplified once i'm confident in all the statistical derivations elsewhere
+  // https://computergraphics.stackexchange.com/questions/8578
+  let brdf = diffuse * INV_PI;
+  return brdf * max(0f, dot(sample.dir, n)) / sample.pdf;
+}
+
+fn GGX_D(n: vec3<f32>, a: f32) -> f32 {
+  let a2 = a * a;
+  let na = n / vec3<f32>(a2, a2, 1f);
+  let n2 = dot(na, na);
+  return 1f / (M_PI * a2 * n2 * n2);
+}
+
+fn GGX_G1(dir: vec3<f32>, a: f32) -> f32 {
+  let v = -dir;
+  let a2 = a * a;
+  let lambda = (-1f + sqrt(1f + (a2 * (v.x * v.x + v.y * v.y)) / (v.z * v.z))) * 0.5;
+  return 1f / (1f + lambda);
+}
+
+// Sampling the GGX Distribution of Visible Normals - Eric Heitz
+fn sampleGGXVNDF(dir: vec3<f32>, n: vec3<f32>, a: f32) -> Sample {
+  let tangent = normalize(
+    select(
+      cross(n, vec3<f32>(0f, 0f, 1f)), 
+      cross(n, vec3<f32>(1f, 0f, 0f)),  
+      abs(dot(n, vec3<f32>(0f, 0f, 1f))) < 0.001)
+  );
+  //let tangent = normalize(cross(dir, n));
+  let ONB = mat3x3<f32>(tangent, n, cross(tangent, n));
+  let invONB = transpose(ONB);
+  let Ve = invONB * -dir;
+  // Section 3.2: transforming the view direction to the hemisphere configuration
+  let Vh = normalize(vec3(a * Ve.x, a * Ve.y, Ve.z));
+  // Section 4.1: orthonormal basis (with special case if cross product is zero)
+  let lensq = dot(Vh.xy, Vh.xy);
+  let T1 = select(vec3<f32>(1f,0f,0f),  vec3<f32>(-Vh.y, Vh.x, 0f) * inverseSqrt(lensq), lensq > 0f);
+  let T2 = cross(Vh, T1);
+  // Section 4.2: parameterization of the projected area
+  let r = sqrt(rand());
+  let phi = M_TAU * rand();
+  let t1 = r * cos(phi);
+  var t2 = r * sin(phi);
+  let s = 0.5 * (1.0 + Vh.z);
+  t2 = (1.0 - s)*sqrt(1.0 - t1*t1) + s*t2;
+  // Section 4.3: reprojection onto hemisphere
+  let Nh = t1*T1 + t2*T2 + sqrt(max(0.0, 1.0 - t1*t1 - t2*t2))*Vh;
+  // Section 3.4: transforming the normal back to the ellipsoid configuration
+  let Ne = normalize(vec3<f32>(a * Nh.x, a * Nh.y, max(0.0, Nh.z)));
+  //let pdf = G1(Ve) * max(0, dot(Ve, Ne)) * D(Ne) / Ve.z
+  return Sample(reflect(-dir, ONB * Ne), 0.1f, 1f);
+}
+
+// float schlick(vec3 incident, vec3 normal, vec2 ns){
+//   float r0 = (ns.x - ns.y) / (ns.x + ns.y);
+//   r0 *= r0;
+//   float cosTheta = dot(normal, incident);
+//   if (ns.x > ns.y)
+//   {
+//       float n = ns.x / ns.y;
+//       float sinTheta2 = n * n * (1.0 - cosTheta * cosTheta);
+//       // Total internal reflection
+//       if (sinTheta2 > 1.0)
+//           return 1.0;
+//       cosTheta = sqrt(1.0 - sinTheta2);
+//   }
+//   float x = 1.0 - cosTheta;
+//   return r0 + (1.0 - r0)*x*x*x*x*x;
+// }
+
+fn powerHeuristic(pdf0: f32, pdf1: f32) -> f32 {
+  let pdf02 = pdf0 * pdf0;
+  return (pdf02)/(pdf02 + pdf1 * pdf1);
+}
+
+fn createPrimaryRay(gid: vec2<f32>, dims: vec2<f32>) -> Ray {
+  let uv = (2f * ((gid + vec2<f32>(rand(), rand())) / dims) - 1f) * vec2<f32>(dims.x / dims.y, -1f);
+  let origin = state.eye.origin;
+  let up = vec3<f32>(0f, 1f, 0f);
+  let basisX: vec3<f32> = normalize(cross(state.eye.dir, up)) * state.fov;
+  let basisY: vec3<f32> = normalize(cross(basisX, state.eye.dir)) * state.fov;
+  let screen: vec3<f32> = uv.x * basisX + uv.y * basisY + state.eye.dir + state.eye.origin;
+ return Ray(state.eye.origin, normalize(screen - state.eye.origin));
+}
+
+fn interpolateVertexAttribute(i: i32, bary: vec3<f32>) -> VertexAttribute {
+  var attr: array<VertexAttribute, 3> = attrs.attributes[i];
+  return VertexAttribute(
+    mat3x3<f32>(attr[0].tangent, attr[1].tangent, attr[2].tangent) * bary,
+    mat3x3<f32>(attr[0].bitangent, attr[1].bitangent, attr[2].bitangent) * bary,
+    mat3x3<f32>(attr[0].normal, attr[1].normal, attr[2].normal) * bary,
+    mat3x2<f32>(attr[0].uv, attr[1].uv, attr[2].uv) * bary,
+  );
+}
+
+fn intersectScene(ray: Ray, anyHit: bool) -> Hit {
+  var result = Hit(MAX_T, -1, 0f, vec3<f32>());
+	var sptr: i32 = 0;
+	stack[sptr] = -1;
+  sptr = sptr + 1;
+	var idx: i32 = 0;
+  var current: Node;
+	loop {
+    if (idx <= -1) { break; }
+    current = bvh.nodes[idx];
+    result.tests = result.tests + 1f;
+    if (current.triangles > -1) {
+      processLeaf(current, ray, &result);
+      if (anyHit && result.index != NO_HIT_IDX) {
+        return result;
+      }
+    } else {
+      var leftIndex = current.left;
+      var rightIndex = current.right;
+      var leftHit = rayBoxIntersect(bvh.nodes[leftIndex], ray);
+      var rightHit = rayBoxIntersect(bvh.nodes[rightIndex], ray);
+      if (leftHit < result.t && rightHit < result.t) {
+        var deferred: i32 = -1;
+        if (leftHit > rightHit) {
+          idx = rightIndex;
+          deferred = leftIndex;
+        } else {
+          idx = leftIndex;
+          deferred = rightIndex;
+        }
+        stack[sptr] = deferred;
+        sptr = sptr + 1;
+        continue;
+      } else {
+        if (leftHit < result.t) {
+          idx = leftIndex;
+          continue;
+        }
+        if (rightHit < result.t) {
+          idx = rightIndex;
+          continue;
+        }
+      }
+    }
+    sptr = sptr - 1;
+		idx = stack[sptr];
+	}
+	return result;
+}
+
+[[stage(compute), workgroup_size(16, 16, 1)]]
+fn main(
+  [[builtin(global_invocation_id)]] GID : vec3<u32>,
+) {
+  let dims = vec2<f32>(textureDimensions(inputTex, 0));
+  let gid = vec2<f32>(GID.xy);
+  if (any(gid >= dims)) {
+    return;
+  }
+  seed = (GID.x * 1973u + GID.y * 9277u + u32(state.samples) * 26699u) | 1u;
+  seed = hash();
+  var ray = createPrimaryRay(gid, dims);
+  var color = vec3<f32>(0f);
+  var bounces: i32 = 0;
+  var bsdfThroughput = vec3<f32>(1f);
+  var hit = intersectScene(ray, false);
+  loop {
+    let currentThroughput = bsdfThroughput;
+    if (hit.index == NO_HIT_IDX) {
+      //color = currentThroughput * envColor(ray.dir);
+      // show the environment if we never hit
+      color = select(color, currentThroughput * envColor(ray.dir), bounces == 0);
+      break;
+    }
+    let tri = triangles.triangles[hit.index];
+    var attr = interpolateVertexAttribute(hit.index, hit.bary);
+    let matIdx = materials.indices[tri.matId];
+    let mapNormal = (textureSampleLevel(atlasTex, atlasSampler, attr.uv, matIdx.normMap, 0f).xyz - vec3<f32>(0.5, 0.5, 0.0)) * vec3<f32>(2.0, 2.0, 1.0);
+    let normal = normalize(mat3x3<f32>(attr.tangent, attr.bitangent, attr.normal) * mapNormal);
+    let diffuse = textureSampleLevel(atlasTex, atlasSampler, attr.uv, matIdx.diffMap, 0f).xyz;
+    let metRough = textureSampleLevel(atlasTex, atlasSampler, attr.uv, matIdx.metRoughMap, 0f).xyz;
+    let origin = ray.origin + ray.dir * (hit.t - EPSILON * 40f);
+    let a = metRough.y * metRough.y;
+    let diffuseSample = sampleLambert(normal);
+    //let diffuseSample = sampleGGXVNDF(ray.dir, normal, a);
+    
+    //let envSample = sampleEnv(normal);
+    var envSample = sampleEnv2(GID);
+    //let pdf = envSample.pdf * 4f * dot(normalize(envSample.dir - ray.dir), envSample.dir);
+    var weight = powerHeuristic(diffuseSample.pdf, envSample.pdf);
+    bsdfThroughput = currentThroughput * evalLambert(diffuse, normal, diffuseSample);
+    if (dot(envSample.dir, normal) > 0f) {
+      let shadow = intersectScene(Ray(origin, envSample.dir), true);
+      if (shadow.index == NO_HIT_IDX) {
+        color = color + currentThroughput * evalLambert(diffuse, normal, envSample) * envColor(envSample.dir);// * (1f - weight);
+      }
+    }
+    ray = Ray(origin, diffuseSample.dir);
+    hit = intersectScene(ray, false);
+    // if (hit.index == NO_HIT_IDX) {
+    //   color = color + currentThroughput * evalLambert(diffuse, normal, diffuseSample) * envColor(diffuseSample.dir) * weight;
+    //   break;
+    // }
+    bounces = bounces + 1;
+    if ( bounces > NUM_BOUNCES ) { break; }
+  }
+  // Load the previous color value.
+  var acc: vec3<f32> = textureLoad(inputTex, vec2<i32>(GID.xy), 0).rgb;
+  acc = vec3<f32>(max(color, vec3<f32>()) + (acc * f32(state.samples)))/(f32(state.samples + 1));
+  textureStore(outputTex, vec2<i32>(GID.xy), vec4<f32>(max(acc, vec3<f32>()), 1.0));
+}
