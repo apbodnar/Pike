@@ -4,7 +4,7 @@ let LEAF_SIZE: i32 = 4;
 let M_PI: f32 = 3.141592653589793;
 let M_TAU: f32 = 6.283185307179586;
 let INV_PI: f32 = 0.3183098861837907;
-let NUM_BOUNCES: i32 = 4;
+let NUM_BOUNCES: i32 = 5;
 let NO_HIT_IDX: i32 = -1;
 
 var<private> seed: u32;
@@ -102,7 +102,8 @@ struct Sample {
 [[group(1), binding(3)]] var<storage, read> materials: MaterialIndices;
 [[group(1), binding(4)]] var atlasTex: texture_2d_array<f32>;
 [[group(1), binding(5)]] var envTex: texture_2d<f32>;
-[[group(1), binding(6)]] var<storage, read> envRadiance: RadianceBins;
+[[group(1), binding(6)]] var lookupTex: texture_2d<i32>;
+[[group(1), binding(7)]] var<storage, read> envRadiance: RadianceBins;
 
 [[group(2), binding(0)]] var<uniform> state: State;
 [[group(2), binding(1)]] var atlasSampler: sampler;
@@ -166,21 +167,40 @@ fn processLeaf(leaf: Node, ray: Ray, result: ptr<function, Hit>){
   }
 }
 
-let ENV_THETA = 0.5;
-
 fn envColor(dir: vec3<f32>) -> vec3<f32> {
-  let c = vec2<f32>(ENV_THETA + atan2(dir.z, dir.x) / M_TAU, asin(-dir.y) * INV_PI + 0.5);
+  let u = state.envTheta + atan2(dir.z, dir.x) / M_TAU;
+  let v = asin(-dir.y) * INV_PI + 0.5;
+  let c = vec2<f32>(u, v);
   let rgbe = textureSampleLevel(envTex, envSampler, c, 0f);
   return rgbe.rgb * pow(2.0, rgbe.a * 255.0 - 128.0);
 }
 
+fn envBinLookup(dir: vec3<f32>) -> RadianceBin {
+  let u = (1f + state.envTheta + atan2(dir.z, dir.x) / M_TAU) % 1f;
+  let v = (1f + asin(-dir.y) * INV_PI + 0.5) % 1f;
+  let uv = vec2<f32>(u, v);
+  let dims = textureDimensions(lookupTex, 0);
+  let c = vec2<f32>(dims) * uv;
+  let idx = textureLoad(lookupTex, vec2<i32>(c), 0).r;
+  return envRadiance.bins[idx];
+}
+
+fn envPdf(wi: vec3<f32>) -> f32 {
+  let numBins = arrayLength(&envRadiance.bins);
+  let bin = envBinLookup(wi);
+  let h0 = cos(bin.y0 * M_PI);
+  let h1 = cos(bin.y1 * M_PI);
+  let segmentArea = M_TAU * (h1 - h0) * (bin.x1 - bin.x0);
+  let nominal = 1f / f32(numBins);
+  return nominal / (abs(segmentArea));
+}
+
 // Solid angle formulation; should reduce clumping near high latitudes
-fn sampleEnv2(gid: vec3<u32>) -> Sample {
+fn sampleEnv() -> Sample {
   let numBins = arrayLength(&envRadiance.bins);
   let idx = i32(hash() % numBins);
-  //let idx = i32((gid.y * 1920u + gid.x + u32(state.samples))  % numBins);
   let bin = envRadiance.bins[idx];
-  let u = -ENV_THETA + (bin.x1 - bin.x0) * rand() + bin.x0;
+  let u = -state.envTheta + (bin.x1 - bin.x0) * rand() + bin.x0;
   let h0 = cos(bin.y0 * M_PI);
   let h1 = cos(bin.y1 * M_PI);
   let hi = (h1 - h0) * rand() + h0;
@@ -190,17 +210,17 @@ fn sampleEnv2(gid: vec3<u32>) -> Sample {
   let dir = vec3<f32>(cos(theta) * sinPhi, cos(phi), sin(theta) * sinPhi);
   let segmentArea = M_TAU * (h1 - h0) * (bin.x1 - bin.x0);
   let nominal: f32 = 1f / f32(numBins);
-  //let pdf = nominal / (abs(segmentArea));
   let pdf = nominal / (abs(segmentArea));
+  //let pdf = envPdf(dir);
   return Sample(dir, pdf, sinPhi);
-} 
+}
 
 // UV space formulation
 // fn sampleEnv(normal: vec3<f32>) -> Sample {
 //   let numBins = f32(arrayLength(&envRadiance.bins));
 //   let idx = i32(numBins * rand());
 //   let bin = envRadiance.bins[idx];
-//   let uv: vec2<f32> = vec2<f32>(-ENV_THETA, 0f) + vec2<f32>(
+//   let uv: vec2<f32> = vec2<f32>(-state.envTheta, 0f) + vec2<f32>(
 //     (bin.x1 - bin.x0) * rand() + bin.x0, 
 //     (bin.y1 - bin.y0) * rand() + bin.y0
 //   );
@@ -213,6 +233,10 @@ fn sampleEnv2(gid: vec3<u32>) -> Sample {
 //   return Sample(dir, pdf);
 // }
 
+fn lambertPdf(wi: vec3<f32>, n: vec3<f32>) -> f32 {
+  return max(dot(wi, n), 0f) * INV_PI;
+}
+
 fn sampleLambert(normal: vec3<f32>) -> Sample {
   let up = select(vec3<f32>(1f, 0f, 0f), vec3<f32>(0f, 0f, 1f), abs(normal.z) < 0.99);
   let tangent = normalize(cross(up, normal));
@@ -223,7 +247,7 @@ fn sampleLambert(normal: vec3<f32>) -> Sample {
 	let y = r * sin(phi);
 	let z = sqrt(max(0.0, 1.0 - x*x - y*y));
 	let dir = mat3x3<f32>(tangent, bitangent, normal) * vec3<f32>(x, y, z);
-  let pdf = max(dot(dir, normal), 0f) * INV_PI;
+  let pdf = lambertPdf(dir, normal);
   return Sample(dir, pdf, 1f);
 }
 
@@ -392,10 +416,8 @@ fn main(
   var hit = intersectScene(ray, false);
   loop {
     let currentThroughput = bsdfThroughput;
-    if (hit.index == NO_HIT_IDX) {
-      //color = currentThroughput * envColor(ray.dir);
-      // show the environment if we never hit
-      color = select(color, currentThroughput * envColor(ray.dir), bounces == 0);
+    if (hit.index == NO_HIT_IDX && bounces == 0) {
+      color = color + currentThroughput * envColor(ray.dir);
       break;
     }
     let tri = triangles.triangles[hit.index];
@@ -407,26 +429,28 @@ fn main(
     let metRough = textureSampleLevel(atlasTex, atlasSampler, attr.uv, matIdx.metRoughMap, 0f).xyz;
     let origin = ray.origin + ray.dir * (hit.t - EPSILON * 40f);
     let a = metRough.y * metRough.y;
-    let diffuseSample = sampleLambert(normal);
-    //let diffuseSample = sampleGGXVNDF(ray.dir, normal, a);
-    
-    //let envSample = sampleEnv(normal);
-    var envSample = sampleEnv2(GID);
-    //let pdf = envSample.pdf * 4f * dot(normalize(envSample.dir - ray.dir), envSample.dir);
-    var weight = powerHeuristic(diffuseSample.pdf, envSample.pdf);
-    bsdfThroughput = currentThroughput * evalLambert(diffuse, normal, diffuseSample);
+    // Sample the environment light
+    var envSample = sampleEnv();
     if (dot(envSample.dir, normal) > 0f) {
       let shadow = intersectScene(Ray(origin, envSample.dir), true);
       if (shadow.index == NO_HIT_IDX) {
-        color = color + currentThroughput * evalLambert(diffuse, normal, envSample) * envColor(envSample.dir);// * (1f - weight);
+        let bsdfPdf = lambertPdf(envSample.dir, normal);
+        let weight = powerHeuristic(envSample.pdf, bsdfPdf);
+        color = color + currentThroughput * evalLambert(diffuse, normal, envSample) * envColor(envSample.dir) * weight;
       }
     }
+    // Sample the BSDF
+    let diffuseSample = sampleLambert(normal);
+    let bsdf = evalLambert(diffuse, normal, diffuseSample);
+    bsdfThroughput = currentThroughput * bsdf;
     ray = Ray(origin, diffuseSample.dir);
     hit = intersectScene(ray, false);
-    // if (hit.index == NO_HIT_IDX) {
-    //   color = color + currentThroughput * evalLambert(diffuse, normal, diffuseSample) * envColor(diffuseSample.dir) * weight;
-    //   break;
-    // }
+    if (hit.index == NO_HIT_IDX) {
+      let envPdf = envPdf(diffuseSample.dir);
+      let weight = powerHeuristic(diffuseSample.pdf, envPdf);
+      color = color + currentThroughput * evalLambert(diffuse, normal, diffuseSample) * envColor(diffuseSample.dir) * weight;
+      break;
+    }
     bounces = bounces + 1;
     if ( bounces > NUM_BOUNCES ) { break; }
   }
