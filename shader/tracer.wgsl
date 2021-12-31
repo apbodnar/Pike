@@ -279,6 +279,10 @@ fn branchlessONB(n: vec3<f32>) -> mat3x3<f32> {
   return mat3x3<f32>(b1, b2, n);
 }
 
+fn specularPdf(wo: vec3<f32>, m: vec3<f32>, au: f32, av: f32) -> f32 {
+  return GGX_D(m, au, av) * GGX_G1(wo, m, au, av) / (4f * wo.z);
+}
+
 //From: "Sampling the GGX Distribution of Visible Normals - Eric Heitz"
 fn sampleGGX(wo: vec3<f32>, au: f32, av: f32) -> Sample {
   // Section 3.2: transforming the view direction to the hemisphere configuration
@@ -300,7 +304,7 @@ fn sampleGGX(wo: vec3<f32>, au: f32, av: f32) -> Sample {
   let m = normalize(vec3<f32>(au * Nh.x, av * Nh.y, max(0.0, Nh.z)));
   // Generate the reflection and the new PDF
   let wi = reflect(-wo, m);
-  let pdf = GGX_D(m, au, av) * GGX_G1(wo, m, au, av) / (4f * wo.z);
+  let pdf = specularPdf(wo, m, au, av);
   return Sample(wi, pdf);
 }
 
@@ -313,22 +317,13 @@ fn evalSpecular(wo: vec3<f32>, wi: vec3<f32>, au: f32, av: f32) -> f32 {
   return D * G / (4f * wo.z);
 }
 
-// float schlick(vec3 incident, vec3 normal, vec2 ns){
-//   float r0 = (ns.x - ns.y) / (ns.x + ns.y);
-//   r0 *= r0;
-//   float cosTheta = dot(normal, incident);
-//   if (ns.x > ns.y)
-//   {
-//       float n = ns.x / ns.y;
-//       float sinTheta2 = n * n * (1.0 - cosTheta * cosTheta);
-//       // Total internal reflection
-//       if (sinTheta2 > 1.0)
-//           return 1.0;
-//       cosTheta = sqrt(1.0 - sinTheta2);
-//   }
-//   float x = 1.0 - cosTheta;
-//   return r0 + (1.0 - r0)*x*x*x*x*x;
-// }
+fn schlick(cosTheta: f32, ior: f32) -> f32 {
+    var r0 = (1f - ior) / (1f + ior); // ref_idx = n2/n1
+    r0 = r0 * r0;
+    let tmp = (1f - cosTheta);
+    let tmp2 = tmp * tmp;
+    return r0 + (1f - r0) * tmp2 * tmp2 * tmp;
+}
 
 fn powerHeuristic(pdf0: f32, pdf1: f32) -> f32 {
   let pdf02 = pdf0 * pdf0;
@@ -436,48 +431,65 @@ fn main(
     let diffuse = textureSampleLevel(atlasTex, atlasSampler, attr.uv, matIdx.diffMap, 0f).xyz;
     let metRough = textureSampleLevel(atlasTex, atlasSampler, attr.uv, matIdx.metRoughMap, 0f).xyz;
     let origin = ray.origin + ray.dir * (hit.t - EPSILON * 40f);
-    let a = 0.03;//metRough.y * metRough.y;
+    let a = 0.03f;//metRough.y * metRough.y;
     // Sample the environment light
-    var envSample = sampleEnv(ONB);
-    if (envSample.wi.z > 0f) {
-      let envDir = ONB * envSample.wi;
-      let shadow = intersectScene(Ray(origin, envDir), true);
-      if (shadow.index == NO_HIT_IDX) {
-        let bsdfPdf = lambertPdf(envDir, normal);
-        let weight = powerHeuristic(envSample.pdf, bsdfPdf);
-        color = color + bsdfThroughput * evalLambert(diffuse, envSample) * envColor(envDir) * weight;
+    let f = schlick(max(dot(-ray.dir, normal), 0f), 1.4);
+    var bsdf = vec3<f32>();
+    if (rand() > f) {
+      var envSample = sampleEnv(ONB);
+      if (envSample.wi.z > 0f) {
+        let envDir = ONB * envSample.wi;
+        let shadow = intersectScene(Ray(origin, envDir), true);
+        if (shadow.index == NO_HIT_IDX) {
+          let bsdfPdf = lambertPdf(envDir, normal);
+          let weight = powerHeuristic(envSample.pdf, bsdfPdf);
+          color = color + bsdfThroughput * evalLambert(diffuse, envSample) * envColor(envDir) * weight;
+        }
+      }
+
+      //Sample the BSDF
+      let diffuseSample = sampleLambert();
+      bsdf = evalLambert(diffuse, diffuseSample);
+      // Transform wi to world coords.
+      let dir = ONB * diffuseSample.wi;
+      ray = Ray(origin, dir);
+      hit = intersectScene(ray, false);
+      if (hit.index == NO_HIT_IDX) {
+        let envPdf = envPdf(dir);
+        let weight = powerHeuristic(diffuseSample.pdf, envPdf);
+        color = color + bsdfThroughput * bsdf * envColor(dir) * weight;
+        break;
+      }
+    } else {
+      //Sample the environment light
+      let wo = -ray.dir * ONB;
+      var envSample = sampleEnv(ONB);
+      if (envSample.wi.z > 0f) {
+        let envDir = ONB * envSample.wi;
+        let shadow = intersectScene(Ray(origin, envDir), true);
+        if (shadow.index == NO_HIT_IDX) {
+          let m = normalize(wo + envSample.wi);
+          let bsdfPdf = specularPdf(wo, m, a, a);
+          let weight = powerHeuristic(envSample.pdf, bsdfPdf);
+          let specVal = evalSpecular(wo, envSample.wi, a, a) * envSample.wi.z / envSample.pdf;
+          color = color + bsdfThroughput * specVal * envColor(envDir) * weight;
+        }
+      }
+
+      // Sample the BSDF
+      let specularSample = sampleGGX(wo, a, a);
+      bsdf = vec3<f32>(1f) * evalSpecular(wo, specularSample.wi, a, a) * specularSample.wi.z / specularSample.pdf;
+      let dir = ONB * specularSample.wi;
+      ray = Ray(origin, dir);
+      hit = intersectScene(ray, false);
+      if (hit.index == NO_HIT_IDX) {
+        let envPdf = envPdf(dir);
+        let weight = powerHeuristic(specularSample.pdf, envPdf);
+        color = color + bsdfThroughput * bsdf * envColor(dir) * weight;
+        break;
       }
     }
-    // Sample the BSDF
-    // let wo = -ray.dir * ONB;
-    // let specularSample = sampleGGX(wo, a, a);
-    // let bsdf = diffuse * evalSpecular(wo, specularSample.wi, a, a) * specularSample.wi.z / specularSample.pdf;
-    // let dir = ONB * specularSample.wi;
-    // ray = Ray(origin, dir);
-    // hit = intersectScene(ray, false);
-    // if (hit.index == NO_HIT_IDX) {
-    //   let envPdf = envPdf(dir);
-    //   let weight = powerHeuristic(specularSample.pdf, envPdf);
-    //   color = color + bsdfThroughput * bsdf * envColor(dir);// * weight;
-    //   break;
-    // }
 
-
-    // Sample the BSDF
-    let diffuseSample = sampleLambert();
-    let bsdf = evalLambert(diffuse, diffuseSample);
-    // Transform wi to world coords.
-    let dir = ONB * diffuseSample.wi;
-    ray = Ray(origin, dir);
-    hit = intersectScene(ray, false);
-    if (hit.index == NO_HIT_IDX) {
-      let envPdf = envPdf(dir);
-      let weight = powerHeuristic(diffuseSample.pdf, envPdf);
-      color = color + bsdfThroughput * bsdf * envColor(dir) * weight;
-      break;
-    }
-
-    
     bsdfThroughput = bsdfThroughput * bsdf;
     bounces = bounces + 1;
     if ( bounces > NUM_BOUNCES ) { break; }
