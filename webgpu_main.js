@@ -279,11 +279,6 @@ async function PathTracer(scenePath, resolution) {
     if (samples == 0) {
       lastDraw = performance.now();
     }
-    // if (samples >= 2000) {
-    //   return;
-    // }
-    const samplesPerDraw = 2;
-    const now = performance.now();
     const rate = Math.round(samples * 1000 / (performance.now() - lastDraw));
     elements.sampleRateElement.value = rate !== Infinity ? rate : 0;
     const tileSizeX = 16;

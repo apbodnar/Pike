@@ -88,9 +88,8 @@ struct RadianceBins {
 };
 
 struct Sample {
-  dir: vec3<f32>;
+  wi: vec3<f32>;
   pdf: f32;
-  J: f32;
 };
 
 [[group(0), binding(0)]] var inputTex : texture_2d<f32>;
@@ -196,7 +195,7 @@ fn envPdf(wi: vec3<f32>) -> f32 {
 }
 
 // Solid angle formulation; should reduce clumping near high latitudes
-fn sampleEnv() -> Sample {
+fn sampleEnv(ONB: mat3x3<f32>) -> Sample {
   let numBins = arrayLength(&envRadiance.bins);
   let idx = i32(hash() % numBins);
   let bin = envRadiance.bins[idx];
@@ -211,82 +210,79 @@ fn sampleEnv() -> Sample {
   let segmentArea = M_TAU * (h1 - h0) * (bin.x1 - bin.x0);
   let nominal: f32 = 1f / f32(numBins);
   let pdf = nominal / (abs(segmentArea));
-  //let pdf = envPdf(dir);
-  return Sample(dir, pdf, sinPhi);
+  return Sample(dir * ONB, pdf);
 }
-
-// UV space formulation
-// fn sampleEnv(normal: vec3<f32>) -> Sample {
-//   let numBins = f32(arrayLength(&envRadiance.bins));
-//   let idx = i32(numBins * rand());
-//   let bin = envRadiance.bins[idx];
-//   let uv: vec2<f32> = vec2<f32>(-state.envTheta, 0f) + vec2<f32>(
-//     (bin.x1 - bin.x0) * rand() + bin.x0, 
-//     (bin.y1 - bin.y0) * rand() + bin.y0
-//   );
-//   let theta = uv.x * M_TAU;
-//   let phi = uv.y * M_PI;
-//   let sinPhi = sin(phi);
-//   let dir = vec3<f32>(cos(theta) * sinPhi, cos(phi), sin(theta) * sinPhi);
-//   let nominal: f32 = 1f / numBins;
-//   let pdf = nominal / ((bin.x1 - bin.x0) * (bin.y1 - bin.y0) * M_TAU * M_PI * sinPhi);
-//   return Sample(dir, pdf);
-// }
 
 fn lambertPdf(wi: vec3<f32>, n: vec3<f32>) -> f32 {
   return max(dot(wi, n), 0f) * INV_PI;
 }
 
-fn sampleLambert(normal: vec3<f32>) -> Sample {
-  let up = select(vec3<f32>(1f, 0f, 0f), vec3<f32>(0f, 0f, 1f), abs(normal.z) < 0.99);
-  let tangent = normalize(cross(up, normal));
-  let bitangent = cross(normal, tangent);
+fn sampleLambert() -> Sample {
+  let normal = vec3<f32>(0f, 0f, 1f);
 	let r: f32 = sqrt(rand());
 	let phi: f32 = M_TAU * rand();
 	let x = r * cos(phi);
 	let y = r * sin(phi);
 	let z = sqrt(max(0.0, 1.0 - x*x - y*y));
-	let dir = mat3x3<f32>(tangent, bitangent, normal) * vec3<f32>(x, y, z);
+	let dir = vec3<f32>(x, y, z);
   let pdf = lambertPdf(dir, normal);
-  return Sample(dir, pdf, 1f);
+  return Sample(dir, pdf);
 }
 
-fn evalLambert(diffuse: vec3<f32>, n: vec3<f32>, sample: Sample) -> vec3<f32> {
+fn evalLambert(diffuse: vec3<f32>, sample: Sample) -> vec3<f32> {
   // Lambertian BRDF = Albedo / Pi
   // TODO: the math can be simplified once i'm confident in all the statistical derivations elsewhere
   // https://computergraphics.stackexchange.com/questions/8578
   let brdf = diffuse * INV_PI;
-  return brdf * max(0f, dot(sample.dir, n)) / sample.pdf;
+  return brdf * max(0f, sample.wi.z) / sample.pdf;
 }
 
-fn GGX_D(n: vec3<f32>, a: f32) -> f32 {
-  let a2 = a * a;
-  let na = n / vec3<f32>(a2, a2, 1f);
-  let n2 = dot(na, na);
-  return 1f / (M_PI * a2 * n2 * n2);
+// D for Cook Torrence microfacet BSDF using GGX distribution.
+// m: the microfacet normal centered on (0, 0, 1)
+// au: anisotropic roughness along the tangent
+// av: anisotropic roughness along the bitangent 
+fn GGX_D(m: vec3<f32>, au: f32, av: f32) -> f32 {
+  let auv = au * av;
+  let tangent = m.x / au;
+  let bitangent = m.y / av;
+  let ellipse = tangent * tangent + bitangent * bitangent + m.z * m.z;
+  return 1f / (M_PI * auv * ellipse * ellipse);
 }
 
-fn GGX_G1(dir: vec3<f32>, a: f32) -> f32 {
-  let v = -dir;
-  let a2 = a * a;
-  let lambda = (-1f + sqrt(1f + (a2 * (v.x * v.x + v.y * v.y)) / (v.z * v.z))) * 0.5;
-  return 1f / (1f + lambda);
+fn GGX_G1(w: vec3<f32>, m: vec3<f32>, au: f32, av: f32) -> f32 {
+  let up = vec3<f32>(0f, 0f, 1f);
+  let ax = w.x * au;
+  let ay = w.y * av;
+  let axy2 = ax * ax + ay * ay;
+  let tanTheta = axy2 / (w.z * w.z);
+  var result = 2f / (1f + sqrt(1f + tanTheta));
+  return select(result, 0f, dot(w, m) * dot(w, up) <= 0f);
 }
 
-// Sampling the GGX Distribution of Visible Normals - Eric Heitz
-fn sampleGGXVNDF(dir: vec3<f32>, n: vec3<f32>, a: f32) -> Sample {
-  let tangent = normalize(
-    select(
-      cross(n, vec3<f32>(0f, 0f, 1f)), 
-      cross(n, vec3<f32>(1f, 0f, 0f)),  
-      abs(dot(n, vec3<f32>(0f, 0f, 1f))) < 0.001)
-  );
-  //let tangent = normalize(cross(dir, n));
-  let ONB = mat3x3<f32>(tangent, n, cross(tangent, n));
-  let invONB = transpose(ONB);
-  let Ve = invONB * -dir;
+fn GGX_PDF(wo: vec3<f32>, m: vec3<f32>, au: f32, av: f32) -> f32 {
+  let up = vec3<f32>(0f, 0f, 1f);
+  let D = GGX_D(m, au, av);
+  return D * GGX_G1(wo, m, au, av) * abs(dot(wo, m)) / dot(wo, up);
+}
+
+fn GGX_G(wi: vec3<f32>, wo: vec3<f32>, m: vec3<f32>, au: f32, av: f32) -> f32 {
+  return GGX_G1(wi, m, au, av) * GGX_G1(wo, m, au, av);
+}
+
+// From: "Building an Orthonormal Basis, Revisited - Pixar et. al"
+fn branchlessONB(n: vec3<f32>) -> mat3x3<f32> {
+  let sign = sign(n.z);
+  let a = -1f / (sign + n.z);
+  let b = n.x * n.y * a;
+  let b1 = vec3<f32>(1f + sign * n.x * n.x * a, sign * b, -sign * n.x);
+  let b2 = vec3<f32>(b, sign + n.y * n.y * a, -n.y);
+  return mat3x3<f32>(b1, b2, n);
+}
+
+//From: "Sampling the GGX Distribution of Visible Normals - Eric Heitz"
+fn sampleGGX(wo: vec3<f32>, au: f32, av: f32) -> Sample {
   // Section 3.2: transforming the view direction to the hemisphere configuration
-  let Vh = normalize(vec3(a * Ve.x, a * Ve.y, Ve.z));
+  let Vh = normalize(vec3(au * wo.x, av * wo.y, wo.z));
   // Section 4.1: orthonormal basis (with special case if cross product is zero)
   let lensq = dot(Vh.xy, Vh.xy);
   let T1 = select(vec3<f32>(1f,0f,0f),  vec3<f32>(-Vh.y, Vh.x, 0f) * inverseSqrt(lensq), lensq > 0f);
@@ -301,9 +297,20 @@ fn sampleGGXVNDF(dir: vec3<f32>, n: vec3<f32>, a: f32) -> Sample {
   // Section 4.3: reprojection onto hemisphere
   let Nh = t1*T1 + t2*T2 + sqrt(max(0.0, 1.0 - t1*t1 - t2*t2))*Vh;
   // Section 3.4: transforming the normal back to the ellipsoid configuration
-  let Ne = normalize(vec3<f32>(a * Nh.x, a * Nh.y, max(0.0, Nh.z)));
-  //let pdf = G1(Ve) * max(0, dot(Ve, Ne)) * D(Ne) / Ve.z
-  return Sample(reflect(-dir, ONB * Ne), 0.1f, 1f);
+  let m = normalize(vec3<f32>(au * Nh.x, av * Nh.y, max(0.0, Nh.z)));
+  // Generate the reflection and the new PDF
+  let wi = reflect(-wo, m);
+  let pdf = GGX_D(m, au, av) * GGX_G1(wo, m, au, av) / (4f * wo.z);
+  return Sample(wi, pdf);
+}
+
+fn evalSpecular(wo: vec3<f32>, wi: vec3<f32>, au: f32, av: f32) -> f32 {
+  let cosThetaI = wi.z;
+  let cosThetaO = wo.z;
+  let H = normalize(wo + wi);
+  let D = GGX_D(H, au, av);
+  let G = GGX_G(wi, wo, H, au, av);
+  return D * G / (4f * wo.z);
 }
 
 // float schlick(vec3 incident, vec3 normal, vec2 ns){
@@ -415,9 +422,8 @@ fn main(
   var bsdfThroughput = vec3<f32>(1f);
   var hit = intersectScene(ray, false);
   loop {
-    let currentThroughput = bsdfThroughput;
     if (hit.index == NO_HIT_IDX && bounces == 0) {
-      color = color + currentThroughput * envColor(ray.dir);
+      color = color + bsdfThroughput * envColor(ray.dir);
       break;
     }
     let tri = triangles.triangles[hit.index];
@@ -425,32 +431,54 @@ fn main(
     let matIdx = materials.indices[tri.matId];
     let mapNormal = (textureSampleLevel(atlasTex, atlasSampler, attr.uv, matIdx.normMap, 0f).xyz - vec3<f32>(0.5, 0.5, 0.0)) * vec3<f32>(2.0, 2.0, 1.0);
     let normal = normalize(mat3x3<f32>(attr.tangent, attr.bitangent, attr.normal) * mapNormal);
+    // ONB used for computations using the mapped normal;
+    let ONB = branchlessONB(normal);
     let diffuse = textureSampleLevel(atlasTex, atlasSampler, attr.uv, matIdx.diffMap, 0f).xyz;
     let metRough = textureSampleLevel(atlasTex, atlasSampler, attr.uv, matIdx.metRoughMap, 0f).xyz;
     let origin = ray.origin + ray.dir * (hit.t - EPSILON * 40f);
-    let a = metRough.y * metRough.y;
+    let a = 0.03;//metRough.y * metRough.y;
     // Sample the environment light
-    var envSample = sampleEnv();
-    if (dot(envSample.dir, normal) > 0f) {
-      let shadow = intersectScene(Ray(origin, envSample.dir), true);
+    var envSample = sampleEnv(ONB);
+    if (envSample.wi.z > 0f) {
+      let envDir = ONB * envSample.wi;
+      let shadow = intersectScene(Ray(origin, envDir), true);
       if (shadow.index == NO_HIT_IDX) {
-        let bsdfPdf = lambertPdf(envSample.dir, normal);
+        let bsdfPdf = lambertPdf(envDir, normal);
         let weight = powerHeuristic(envSample.pdf, bsdfPdf);
-        color = color + currentThroughput * evalLambert(diffuse, normal, envSample) * envColor(envSample.dir) * weight;
+        color = color + bsdfThroughput * evalLambert(diffuse, envSample) * envColor(envDir) * weight;
       }
     }
     // Sample the BSDF
-    let diffuseSample = sampleLambert(normal);
-    let bsdf = evalLambert(diffuse, normal, diffuseSample);
-    bsdfThroughput = currentThroughput * bsdf;
-    ray = Ray(origin, diffuseSample.dir);
+    // let wo = -ray.dir * ONB;
+    // let specularSample = sampleGGX(wo, a, a);
+    // let bsdf = diffuse * evalSpecular(wo, specularSample.wi, a, a) * specularSample.wi.z / specularSample.pdf;
+    // let dir = ONB * specularSample.wi;
+    // ray = Ray(origin, dir);
+    // hit = intersectScene(ray, false);
+    // if (hit.index == NO_HIT_IDX) {
+    //   let envPdf = envPdf(dir);
+    //   let weight = powerHeuristic(specularSample.pdf, envPdf);
+    //   color = color + bsdfThroughput * bsdf * envColor(dir);// * weight;
+    //   break;
+    // }
+
+
+    // Sample the BSDF
+    let diffuseSample = sampleLambert();
+    let bsdf = evalLambert(diffuse, diffuseSample);
+    // Transform wi to world coords.
+    let dir = ONB * diffuseSample.wi;
+    ray = Ray(origin, dir);
     hit = intersectScene(ray, false);
     if (hit.index == NO_HIT_IDX) {
-      let envPdf = envPdf(diffuseSample.dir);
+      let envPdf = envPdf(dir);
       let weight = powerHeuristic(diffuseSample.pdf, envPdf);
-      color = color + currentThroughput * evalLambert(diffuse, normal, diffuseSample) * envColor(diffuseSample.dir) * weight;
+      color = color + bsdfThroughput * bsdf * envColor(dir) * weight;
       break;
     }
+
+    
+    bsdfThroughput = bsdfThroughput * bsdf;
     bounces = bounces + 1;
     if ( bounces > NUM_BOUNCES ) { break; }
   }
