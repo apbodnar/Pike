@@ -11,6 +11,7 @@ import {
   WGSLPackedStructArray,
   RenderStateStruct,
   MaterialIndexStruct,
+  PostprocessParamsStruct,
 } from './webgpu_utils.js';
 
 async function PathTracer(scenePath, resolution) {
@@ -30,12 +31,17 @@ async function PathTracer(scenePath, resolution) {
     envTheta = parseFloat(e.target.value);
     samples = 0;
   }, false);
+  let exposure = 1;
+  elements.exposureElement.addEventListener('input', function (e) {
+    exposure = parseFloat(e.target.value);
+  }, false);
   let camera = new CameraController(elements.canvasElement, { dir: [0, 0, -1], origin: [0, 0, 2] }, (e) => { samples = 0 });
   let texturePacker = new TexturePacker(2048);
   let postProcessBindGroup;
   let renderTargetBindGroups;
   let uniformsBindGroup;
   let renderStateBuffer;
+  let postprocessParamsBuffer;
   let storageBindGroup;
   let tracerPipeline;
   let postProcessPipeline;
@@ -68,7 +74,7 @@ async function PathTracer(scenePath, resolution) {
     if (group.material["map_pmr"]) {
       let assetUrl = basePath + "/" + group.material["map_pmr"];
       let img = assets[assetUrl];
-      img.swizzle = group.material["pmr_swizzle"];
+      img.swizzle = group.material["pmr_swizzle"] || transforms.mrSwizzle;
       roughnessIndex = texturePacker.addTexture(img);
     } else if (group.material["pmr"]) {
       roughnessIndex = texturePacker.addColor(group.material["pmr"]);
@@ -308,6 +314,9 @@ async function PathTracer(scenePath, resolution) {
       computePass.endPass();
     }
 
+    const params = new PostprocessParamsStruct({exposure});
+    const source = params.createWGPUBuffer(device, GPUBufferUsage.COPY_SRC);
+    commandEncoder.copyBufferToBuffer(source, 0, postprocessParamsBuffer, 0, params.size);
     const passEncoder = commandEncoder.beginRenderPass({
       colorAttachments: [
         {
@@ -437,13 +446,22 @@ async function PathTracer(scenePath, resolution) {
         },
       ],
     });
-
+    postprocessParamsBuffer = device.createBuffer({
+      size: PostprocessParamsStruct.getStride(),
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.UNIFORM,
+    });
     postProcessBindGroup = device.createBindGroup({
       layout: postProcessPipeline.getBindGroupLayout(0),
       entries: [
         {
           binding: 0,
           resource: textures[1].createView(),
+        },
+        {
+          binding: 1,
+          resource: {
+            buffer: postprocessParamsBuffer
+          },
         },
       ],
     });

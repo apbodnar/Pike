@@ -213,3 +213,11 @@ export class RadianceBinStruct extends WGSLPackedStruct {
     ];
   }
 }
+
+export class PostprocessParamsStruct extends WGSLPackedStruct {
+  static get desc() {
+    return [
+      { name: "exposure", type: Float32Array, count: 1 },
+    ];
+  }
+}

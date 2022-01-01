@@ -219,12 +219,12 @@ fn lambertPdf(wi: vec3<f32>, n: vec3<f32>) -> f32 {
 
 fn sampleLambert() -> Sample {
   let normal = vec3<f32>(0f, 0f, 1f);
-	let r: f32 = sqrt(rand());
-	let phi: f32 = M_TAU * rand();
-	let x = r * cos(phi);
-	let y = r * sin(phi);
-	let z = sqrt(max(0.0, 1.0 - x*x - y*y));
-	let dir = vec3<f32>(x, y, z);
+  let r: f32 = sqrt(rand());
+  let phi: f32 = M_TAU * rand();
+  let x = r * cos(phi);
+  let y = r * sin(phi);
+  let z = sqrt(max(0.0, 1.0 - x*x - y*y));
+  let dir = vec3<f32>(x, y, z);
   let pdf = lambertPdf(dir, normal);
   return Sample(dir, pdf);
 }
@@ -271,7 +271,7 @@ fn GGX_G(wi: vec3<f32>, wo: vec3<f32>, m: vec3<f32>, au: f32, av: f32) -> f32 {
 
 // From: "Building an Orthonormal Basis, Revisited - Pixar et. al"
 fn branchlessONB(n: vec3<f32>) -> mat3x3<f32> {
-  let sign = sign(n.z);
+  let sign = select(-1f, 1f, n.z > 0f);
   let a = -1f / (sign + n.z);
   let b = n.x * n.y * a;
   let b1 = vec3<f32>(1f + sign * n.x * n.x * a, sign * b, -sign * n.x);
@@ -318,7 +318,7 @@ fn evalSpecular(wo: vec3<f32>, wi: vec3<f32>, au: f32, av: f32) -> f32 {
 }
 
 fn schlick(cosTheta: f32, ior: f32) -> f32 {
-    var r0 = (1f - ior) / (1f + ior); // ref_idx = n2/n1
+    var r0 = (1f - ior) / (1f + ior); // ior = n2/n1
     r0 = r0 * r0;
     let tmp = (1f - cosTheta);
     let tmp2 = tmp * tmp;
@@ -352,12 +352,12 @@ fn interpolateVertexAttribute(i: i32, bary: vec3<f32>) -> VertexAttribute {
 
 fn intersectScene(ray: Ray, anyHit: bool) -> Hit {
   var result = Hit(MAX_T, -1, 0f, vec3<f32>());
-	var sptr: i32 = 0;
-	stack[sptr] = -1;
+  var sptr: i32 = 0;
+  stack[sptr] = -1;
   sptr = sptr + 1;
-	var idx: i32 = 0;
+  var idx: i32 = 0;
   var current: Node;
-	loop {
+  loop {
     if (idx <= -1) { break; }
     current = bvh.nodes[idx];
     result.tests = result.tests + 1f;
@@ -431,9 +431,9 @@ fn main(
     let diffuse = textureSampleLevel(atlasTex, atlasSampler, attr.uv, matIdx.diffMap, 0f).xyz;
     let metRough = textureSampleLevel(atlasTex, atlasSampler, attr.uv, matIdx.metRoughMap, 0f).xyz;
     let origin = ray.origin + ray.dir * (hit.t - EPSILON * 40f);
-    let a = 0.03f;//metRough.y * metRough.y;
+    let a = metRough.g * metRough.g;
     // Sample the environment light
-    let f = schlick(max(dot(-ray.dir, normal), 0f), 1.4);
+    let f = mix(schlick(max(dot(-ray.dir, normal), 0f), 1.3), 1f, metRough.r);
     var bsdf = vec3<f32>();
     if (rand() > f) {
       var envSample = sampleEnv(ONB);
@@ -462,6 +462,7 @@ fn main(
       }
     } else {
       //Sample the environment light
+      let specular = mix(vec3<f32>(1f), diffuse, metRough.r);
       let wo = -ray.dir * ONB;
       var envSample = sampleEnv(ONB);
       if (envSample.wi.z > 0f) {
@@ -471,14 +472,14 @@ fn main(
           let m = normalize(wo + envSample.wi);
           let bsdfPdf = specularPdf(wo, m, a, a);
           let weight = powerHeuristic(envSample.pdf, bsdfPdf);
-          let specVal = evalSpecular(wo, envSample.wi, a, a) * envSample.wi.z / envSample.pdf;
+          let specVal = specular * evalSpecular(wo, envSample.wi, a, a)  / envSample.pdf;
           color = color + bsdfThroughput * specVal * envColor(envDir) * weight;
         }
       }
 
       // Sample the BSDF
       let specularSample = sampleGGX(wo, a, a);
-      bsdf = vec3<f32>(1f) * evalSpecular(wo, specularSample.wi, a, a) * specularSample.wi.z / specularSample.pdf;
+      bsdf = specular * evalSpecular(wo, specularSample.wi, a, a) / specularSample.pdf;
       let dir = ONB * specularSample.wi;
       ray = Ray(origin, dir);
       hit = intersectScene(ray, false);
