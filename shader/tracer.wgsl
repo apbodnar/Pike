@@ -243,12 +243,11 @@ fn sampleLambert() -> Sample {
   return Sample(dir, pdf);
 }
 
-fn evalLambert(diffuse: vec3<f32>, sample: Sample) -> vec3<f32> {
+fn evalLambert(sample: Sample) -> f32 {
   // Lambertian BRDF = Albedo / Pi
   // TODO: the math can be simplified once i'm confident in all the statistical derivations elsewhere
   // https://computergraphics.stackexchange.com/questions/8578
-  let brdf = diffuse * INV_PI;
-  return brdf * max(0f, sample.wi.z) / sample.pdf;
+  return INV_PI * max(0f, sample.wi.z) / sample.pdf;
 }
 
 // D for Cook Torrence microfacet BSDF using GGX distribution.
@@ -441,7 +440,6 @@ fn main(
     let a = metRough.g * metRough.g;
     let wo = -ray.dir * ONB;
     let m = sampleGGX(wo, a, a);
-    
     let f = mix(schlick(max(dot(wo, m), 0f), 1.4), 1f, metRough.r);
     var bsdf = vec3<f32>();
     // Sample the environment light
@@ -450,35 +448,31 @@ fn main(
     if (dot(envSample.wi, m) > 0f && envSample.wi.z > 0f) {
       let shadow = intersectScene(Ray(origin, envDir), true);
       if (shadow.index == NO_HIT_IDX) {
-        color = color + (1f - f) * bsdfThroughput * evalLambert(diffuse, envSample) * envColor(envDir) * powerHeuristic(envSample.pdf, lambertPdf(envDir, normal));
-        let specVal = specular * evalSpecular(wo, envSample.wi, a, a)  / envSample.pdf;
-        color = color +  f * bsdfThroughput * specVal * envColor(envDir) * powerHeuristic(envSample.pdf, specularPdf(wo, normalize(wo + envSample.wi), a, a));
+        let env = envColor(envDir);
+        color = color + (1f - f) * bsdfThroughput * diffuse * evalLambert(envSample) * env * powerHeuristic(envSample.pdf, lambertPdf(envDir, normal));
+        let specVal = specular * evalSpecular(wo, envSample.wi, a, a) / envSample.pdf;
+        let h = normalize(wo + envSample.wi);
+        color = color +  f * bsdfThroughput * specVal * env * powerHeuristic(envSample.pdf, specularPdf(wo, h, a, a));
       }
     }
 
+    var brdfSample: Sample;
     if (rand() > f) {
       //Sample the BSDF
-      let diffuseSample = sampleLambert();
-      bsdf = evalLambert(diffuse, diffuseSample);
-      // Transform wi to world coords.
-      let dir = ONB * diffuseSample.wi;
-      ray = Ray(origin, dir);
-      hit = intersectScene(ray, false);
-      if (hit.index == NO_HIT_IDX) {
-        color = color + bsdfThroughput * bsdf * envColor(dir) * powerHeuristic(diffuseSample.pdf, envPdf(dir));
-        break;
-      }
+      brdfSample = sampleLambert();
+      bsdf = diffuse * evalLambert(brdfSample);
     } else {
       // Sample the BSDF
-      let specularSample = sampleSpecular(wo, m, a, a);
-      bsdf = specular * evalSpecular(wo, specularSample.wi, a, a) / specularSample.pdf;
-      let dir = ONB * specularSample.wi;
-      ray = Ray(origin, dir);
-      hit = intersectScene(ray, false);
-      if (hit.index == NO_HIT_IDX) {
-        color = color + bsdfThroughput * bsdf * envColor(dir) * powerHeuristic(specularSample.pdf, envPdf(dir));
-        break;
-      }
+      brdfSample = sampleSpecular(wo, m, a, a);
+      bsdf = specular * evalSpecular(wo, brdfSample.wi, a, a) / brdfSample.pdf;
+    }
+
+    let dir = ONB * brdfSample.wi;
+    ray = Ray(origin, dir);
+    hit = intersectScene(ray, false);
+    if (hit.index == NO_HIT_IDX) {
+      color = color + bsdfThroughput * bsdf * envColor(dir) * powerHeuristic(brdfSample.pdf, envPdf(dir));
+      break;
     }
 
     bsdfThroughput = bsdfThroughput * bsdf;

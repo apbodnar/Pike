@@ -86,8 +86,7 @@ async function PathTracer(scenePath, resolution) {
       roughnessIndex = texturePacker.addColor(transforms.metallicRoughness);
     } else if (group.material["ns"]) {
       roughnessIndex = texturePacker.addColor([0, Math.sqrt(2 / (group.material["ns"] + 2)), 0]);
-    }
-    else {
+    } else {
       roughnessIndex = texturePacker.addColor([0.0, 0.3, 0]);
     }
 
