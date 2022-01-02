@@ -120,6 +120,20 @@ fn rand() -> f32 {
   return f32(hash()) / 4294967296.0;
 }
 
+// From: "Building an Orthonormal Basis, Revisited - Pixar et. al"
+fn branchlessONB(n: vec3<f32>) -> mat3x3<f32> {
+  // sign() performs catastrophically slowly last checked
+  let lastBit: u32 = bitcast<u32>(n.z) & 2147483648u;
+  let sign = bitcast<f32>(bitcast<u32>(-1f) | lastBit);
+  // let sign = select(-1f, 1f, n.z > 0f);
+  //let sign = sign(n.z);
+  let a = -1f / (sign + n.z);
+  let b = n.x * n.y * a;
+  let b1 = vec3<f32>(1f + sign * n.x * n.x * a, sign * b, -sign * n.x);
+  let b2 = vec3<f32>(b, sign + n.y * n.y * a, -n.y);
+  return mat3x3<f32>(b1, b2, n);
+}
+
 fn rayBoxIntersect(node: Node, ray: Ray) -> f32 {
   let inverse = 1.0 / ray.dir;
   let t1 = (node.boxMin - ray.origin) * inverse;
@@ -137,7 +151,7 @@ fn rayTriangleIntersect(ray: Ray, tri: Triangle, bary: ptr<function, vec3<f32>>)
   let p: vec3<f32> = cross(ray.dir, e2);
   let det: f32 = dot(e1, p);
   if(abs(det) < EPSILON){return MAX_T;}
-  let invDet: f32 = 1f / det;
+  let invDet = 1f / det;
   let t: vec3<f32> = ray.origin - tri.v1;
   let u: f32 = dot(t, p) * invDet;
   if(u < 0f || u > 1f){return MAX_T;}
@@ -269,22 +283,8 @@ fn GGX_G(wi: vec3<f32>, wo: vec3<f32>, m: vec3<f32>, au: f32, av: f32) -> f32 {
   return GGX_G1(wi, m, au, av) * GGX_G1(wo, m, au, av);
 }
 
-// From: "Building an Orthonormal Basis, Revisited - Pixar et. al"
-fn branchlessONB(n: vec3<f32>) -> mat3x3<f32> {
-  let sign = select(-1f, 1f, n.z > 0f);
-  let a = -1f / (sign + n.z);
-  let b = n.x * n.y * a;
-  let b1 = vec3<f32>(1f + sign * n.x * n.x * a, sign * b, -sign * n.x);
-  let b2 = vec3<f32>(b, sign + n.y * n.y * a, -n.y);
-  return mat3x3<f32>(b1, b2, n);
-}
-
-fn specularPdf(wo: vec3<f32>, m: vec3<f32>, au: f32, av: f32) -> f32 {
-  return GGX_D(m, au, av) * GGX_G1(wo, m, au, av) / (4f * wo.z);
-}
-
 //From: "Sampling the GGX Distribution of Visible Normals - Eric Heitz"
-fn sampleGGX(wo: vec3<f32>, au: f32, av: f32) -> Sample {
+fn sampleGGX(wo: vec3<f32>, au: f32, av: f32) -> vec3<f32> {
   // Section 3.2: transforming the view direction to the hemisphere configuration
   let Vh = normalize(vec3(au * wo.x, av * wo.y, wo.z));
   // Section 4.1: orthonormal basis (with special case if cross product is zero)
@@ -301,8 +301,14 @@ fn sampleGGX(wo: vec3<f32>, au: f32, av: f32) -> Sample {
   // Section 4.3: reprojection onto hemisphere
   let Nh = t1*T1 + t2*T2 + sqrt(max(0.0, 1.0 - t1*t1 - t2*t2))*Vh;
   // Section 3.4: transforming the normal back to the ellipsoid configuration
-  let m = normalize(vec3<f32>(au * Nh.x, av * Nh.y, max(0.0, Nh.z)));
-  // Generate the reflection and the new PDF
+  return normalize(vec3<f32>(au * Nh.x, av * Nh.y, max(0.0, Nh.z)));
+}
+
+fn specularPdf(wo: vec3<f32>, m: vec3<f32>, au: f32, av: f32) -> f32 {
+  return GGX_D(m, au, av) * GGX_G1(wo, m, au, av) / (4f * wo.z);
+}
+
+fn sampleSpecular(wo: vec3<f32>,  m: vec3<f32>, au: f32, av: f32) -> Sample {
   let wi = reflect(-wo, m);
   let pdf = specularPdf(wo, m, au, av);
   return Sample(wi, pdf);
@@ -428,25 +434,29 @@ fn main(
     let normal = normalize(mat3x3<f32>(attr.tangent, attr.bitangent, attr.normal) * mapNormal);
     // ONB used for computations using the mapped normal;
     let ONB = branchlessONB(normal);
-    let diffuse = textureSampleLevel(atlasTex, atlasSampler, attr.uv, matIdx.diffMap, 0f).xyz;
     let metRough = textureSampleLevel(atlasTex, atlasSampler, attr.uv, matIdx.metRoughMap, 0f).xyz;
+    let diffuse = textureSampleLevel(atlasTex, atlasSampler, attr.uv, matIdx.diffMap, 0f).xyz;
+    let specular = mix(vec3<f32>(1f), diffuse, metRough.r);
     let origin = ray.origin + ray.dir * (hit.t - EPSILON * 40f);
     let a = metRough.g * metRough.g;
-    // Sample the environment light
-    let f = mix(schlick(max(dot(-ray.dir, normal), 0f), 1.3), 1f, metRough.r);
+    let wo = -ray.dir * ONB;
+    let m = sampleGGX(wo, a, a);
+    
+    let f = mix(schlick(max(dot(wo, m), 0f), 1.4), 1f, metRough.r);
     var bsdf = vec3<f32>();
-    if (rand() > f) {
-      var envSample = sampleEnv(ONB);
-      if (envSample.wi.z > 0f) {
-        let envDir = ONB * envSample.wi;
-        let shadow = intersectScene(Ray(origin, envDir), true);
-        if (shadow.index == NO_HIT_IDX) {
-          let bsdfPdf = lambertPdf(envDir, normal);
-          let weight = powerHeuristic(envSample.pdf, bsdfPdf);
-          color = color + bsdfThroughput * evalLambert(diffuse, envSample) * envColor(envDir) * weight;
-        }
+    // Sample the environment light
+    let envSample = sampleEnv(ONB);
+    let envDir = ONB * envSample.wi;
+    if (dot(envSample.wi, m) > 0f && envSample.wi.z > 0f) {
+      let shadow = intersectScene(Ray(origin, envDir), true);
+      if (shadow.index == NO_HIT_IDX) {
+        color = color + (1f - f) * bsdfThroughput * evalLambert(diffuse, envSample) * envColor(envDir) * powerHeuristic(envSample.pdf, lambertPdf(envDir, normal));
+        let specVal = specular * evalSpecular(wo, envSample.wi, a, a)  / envSample.pdf;
+        color = color +  f * bsdfThroughput * specVal * envColor(envDir) * powerHeuristic(envSample.pdf, specularPdf(wo, normalize(wo + envSample.wi), a, a));
       }
+    }
 
+    if (rand() > f) {
       //Sample the BSDF
       let diffuseSample = sampleLambert();
       bsdf = evalLambert(diffuse, diffuseSample);
@@ -455,38 +465,18 @@ fn main(
       ray = Ray(origin, dir);
       hit = intersectScene(ray, false);
       if (hit.index == NO_HIT_IDX) {
-        let envPdf = envPdf(dir);
-        let weight = powerHeuristic(diffuseSample.pdf, envPdf);
-        color = color + bsdfThroughput * bsdf * envColor(dir) * weight;
+        color = color + bsdfThroughput * bsdf * envColor(dir) * powerHeuristic(diffuseSample.pdf, envPdf(dir));
         break;
       }
     } else {
-      //Sample the environment light
-      let specular = mix(vec3<f32>(1f), diffuse, metRough.r);
-      let wo = -ray.dir * ONB;
-      var envSample = sampleEnv(ONB);
-      if (envSample.wi.z > 0f) {
-        let envDir = ONB * envSample.wi;
-        let shadow = intersectScene(Ray(origin, envDir), true);
-        if (shadow.index == NO_HIT_IDX) {
-          let m = normalize(wo + envSample.wi);
-          let bsdfPdf = specularPdf(wo, m, a, a);
-          let weight = powerHeuristic(envSample.pdf, bsdfPdf);
-          let specVal = specular * evalSpecular(wo, envSample.wi, a, a)  / envSample.pdf;
-          color = color + bsdfThroughput * specVal * envColor(envDir) * weight;
-        }
-      }
-
       // Sample the BSDF
-      let specularSample = sampleGGX(wo, a, a);
+      let specularSample = sampleSpecular(wo, m, a, a);
       bsdf = specular * evalSpecular(wo, specularSample.wi, a, a) / specularSample.pdf;
       let dir = ONB * specularSample.wi;
       ray = Ray(origin, dir);
       hit = intersectScene(ray, false);
       if (hit.index == NO_HIT_IDX) {
-        let envPdf = envPdf(dir);
-        let weight = powerHeuristic(specularSample.pdf, envPdf);
-        color = color + bsdfThroughput * bsdf * envColor(dir) * weight;
+        color = color + bsdfThroughput * bsdf * envColor(dir) * powerHeuristic(specularSample.pdf, envPdf(dir));
         break;
       }
     }

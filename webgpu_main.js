@@ -84,7 +84,10 @@ async function PathTracer(scenePath, resolution) {
       roughnessIndex = texturePacker.addTexture(img);
     } else if (typeof transforms.metallicRoughness === 'object') {
       roughnessIndex = texturePacker.addColor(transforms.metallicRoughness);
-    } else {
+    } else if (group.material["ns"]) {
+      roughnessIndex = texturePacker.addColor([0, Math.sqrt(2 / (group.material["ns"] + 2)), 0]);
+    }
+    else {
       roughnessIndex = texturePacker.addColor([0.0, 0.3, 0]);
     }
 
@@ -350,7 +353,7 @@ async function PathTracer(scenePath, resolution) {
       size: resolution,
     });
     const tracerWGSL = await fetch('./shader/tracer.wgsl').then(res => res.text());
-    const quadWGSL = await fetch('./shader/draw_quad.wgsl').then(res => res.text());
+    const quadWGSL = await fetch('./shader/postprocess.wgsl').then(res => res.text());
     tracerPipeline = device.createComputePipeline({
       compute: {
         module: device.createShaderModule({
@@ -479,11 +482,7 @@ async function PathTracer(scenePath, resolution) {
 
   let sceneRes = await Utility.getText(scenePath);
   // Use a set to prevent multiple requests
-  let pathSet = new Set([
-    "shader/tracer.wgsl",
-    "shader/draw_quad.wgsl",
-    scenePath
-  ]);
+  let pathSet = new Set([scenePath]);
   let scene = JSON.parse(sceneRes);
   mergeSceneProps(scene).forEach(function (e) {
     pathSet.add(e.path);
