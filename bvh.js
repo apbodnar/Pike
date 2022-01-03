@@ -1,8 +1,5 @@
-import {
-  Vec3
-} from './vector.js'
-
-import {Queue} from './utility.js'
+import { Vec3 } from './vector.js'
+import { Queue } from './utility.js'
 
 export class BVH {
   constructor(triangles, maxTris) {
@@ -21,7 +18,6 @@ export class BVH {
   }
 
   buildTree(indices, depth) {
-    
     this.depth = Math.max(depth, this.depth);
     let root = new Node(this.triangles, indices);
     const count = root.indices[root.splitAxis || 0].length;
@@ -34,7 +30,6 @@ export class BVH {
     root.left = this.buildTree(splitIndices.left, depth + 1);
     root.right = this.buildTree(splitIndices.right, depth + 1);
     root.clearTempBuffers();
-    
     return root;
   }
 
@@ -43,8 +38,8 @@ export class BVH {
     let root = new Node(this.triangles, indices);
     let q = new Queue();
     let splitIndices = this._constructCachedIndexList(indices, root.splitAxis, root.splitIndex);
-    q.enqueue({indices: splitIndices.left, depth: this.depth + 1, parent: root, left: true});
-    q.enqueue({indices: splitIndices.right, depth: this.depth + 1, parent: root, left: false});
+    q.enqueue({ indices: splitIndices.left, depth: this.depth + 1, parent: root, left: true });
+    q.enqueue({ indices: splitIndices.right, depth: this.depth + 1, parent: root, left: false });
     while (q.hasElements()) {
       const args = q.dequeue();
       this.depth = Math.max(this.depth, args.depth);
@@ -60,8 +55,8 @@ export class BVH {
         this._numLeafTris += count;
       } else {
         let splitIndices = this._constructCachedIndexList(args.indices, node.splitAxis, node.splitIndex);
-        q.enqueue({indices: splitIndices.left, depth: args.depth + 1, parent: node, left: true});
-        q.enqueue({indices: splitIndices.right, depth: args.depth + 1, parent: node, left: false});
+        q.enqueue({ indices: splitIndices.left, depth: args.depth + 1, parent: node, left: true });
+        q.enqueue({ indices: splitIndices.right, depth: args.depth + 1, parent: node, left: false });
       }
     }
     console.log("BUILD 2:", (performance.now() - now) / 1000);
@@ -71,20 +66,20 @@ export class BVH {
   // BFS is slightly slower but generates a tiny bit (2-3%) faster BVH. Guessing because it preserves locality.
   serializeTree() {
     let nodes = [];
-    let root = {node: this.root, parent:-1};
+    let root = { node: this.root, parent: -1 };
     // Array based queues are very slow at high lengths. A very naive linked list based one is far faster for large scenes.
     let qq = new Queue();
     qq.enqueue(root);
-    while(qq.hasElements()) {
+    while (qq.hasElements()) {
       root = qq.dequeue();
       let parent = nodes.length;
       nodes.push(root);
       if (!root.node.leaf) {
-        qq.enqueue({node: root.node.left, parent});
-        qq.enqueue({node: root.node.right, parent});
+        qq.enqueue({ node: root.node.left, parent });
+        qq.enqueue({ node: root.node.right, parent });
       }
     }
-    for (let i=0; i< nodes.length; i++) {
+    for (let i = 0; i < nodes.length; i++) {
       const node = nodes[i];
       if (node.parent >= 0) {
         const parent = nodes[node.parent];

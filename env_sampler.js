@@ -16,6 +16,7 @@ export class EnvironmentGenerator {
     this.lookupData = new Int16Array(this.img.width * this.img.height);
     this.strata = this._createLuminanceStrata();
     //this.paintLookupDebugImage();
+    //this.paintDebugImage();
   }
 
   _luma(c) {
@@ -31,7 +32,7 @@ export class EnvironmentGenerator {
   }
 
   _getRadiance(x, y) {
-    let normalized = [0, 0, 0]
+    let normalized = [0, 0, 0];
     let color = this._pixelAt(x, y);
     //let phi = (y / img.height) * Math.PI;
     let scale = 1;//Math.sin(phi);
@@ -84,11 +85,13 @@ export class EnvironmentGenerator {
     return boxes;
   }
 
-  // _biTreeSplitting2(totalRadiance, minRadiance) {
+  // _biTreeSplitting(totalRadiance, minRadiance) {
   //   let boxes = []
   //   let biSplit = (radiance, x0, y0, x1, y1, depth) => {
   //     if (depth >= 10 || radiance <= minRadiance || (y1 - y0) * (x1 - x0) < 2) {
-  //       boxes.push({ x0, y0, x1, y1 });
+  //       const box = { x0, y0, x1, y1 };
+  //       this._setLookupIndex(box, boxes.length);
+  //       boxes.push(box);
   //       return;
   //     }
   //     let subRadiance = 0;

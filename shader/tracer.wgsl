@@ -313,13 +313,11 @@ fn sampleSpecular(wo: vec3<f32>,  m: vec3<f32>, au: f32, av: f32) -> Sample {
   return Sample(wi, pdf);
 }
 
-fn evalSpecular(wo: vec3<f32>, wi: vec3<f32>, au: f32, av: f32) -> f32 {
-  let cosThetaI = wi.z;
-  let cosThetaO = wo.z;
-  let H = normalize(wo + wi);
+fn evalSpecular(wo: vec3<f32>, sample: Sample, au: f32, av: f32) -> f32 {
+  let H = normalize(wo + sample.wi);
   let D = GGX_D(H, au, av);
-  let G = GGX_G(wi, wo, H, au, av);
-  return D * G / (4f * wo.z);
+  let G = GGX_G(sample.wi, wo, H, au, av);
+  return max(D * G / (4f * wo.z * sample.pdf), 0f);
 }
 
 fn schlick(cosTheta: f32, ior: f32) -> f32 {
@@ -419,11 +417,11 @@ fn main(
   var ray = createPrimaryRay(gid, dims);
   var color = vec3<f32>(0f);
   var bounces: i32 = 0;
-  var bsdfThroughput = vec3<f32>(1f);
+  var throughput = vec3<f32>(1f);
   var hit = intersectScene(ray, false);
   loop {
     if (hit.index == NO_HIT_IDX && bounces == 0) {
-      color = color + bsdfThroughput * envColor(ray.dir);
+      color = color + throughput * envColor(ray.dir);
       break;
     }
     let tri = triangles.triangles[hit.index];
@@ -441,7 +439,6 @@ fn main(
     let wo = -ray.dir * ONB;
     let m = sampleGGX(wo, a, a);
     let f = mix(schlick(max(dot(wo, m), 0f), 1.4), 1f, metRough.r);
-    var bsdf = vec3<f32>();
     // Sample the environment light
     let envSample = sampleEnv(ONB);
     let envDir = ONB * envSample.wi;
@@ -449,38 +446,38 @@ fn main(
       let shadow = intersectScene(Ray(origin, envDir), true);
       if (shadow.index == NO_HIT_IDX) {
         let env = envColor(envDir);
-        color = color + (1f - f) * bsdfThroughput * diffuse * evalLambert(envSample) * env * powerHeuristic(envSample.pdf, lambertPdf(envDir, normal));
-        let specVal = specular * evalSpecular(wo, envSample.wi, a, a) / envSample.pdf;
+        let lambertWeight = powerHeuristic(envSample.pdf, lambertPdf(envDir, normal));
+        color = color + (1f - f) * throughput * diffuse * evalLambert(envSample) * env * lambertWeight;
         let h = normalize(wo + envSample.wi);
-        color = color +  f * bsdfThroughput * specVal * env * powerHeuristic(envSample.pdf, specularPdf(wo, h, a, a));
+        let specWeight = powerHeuristic(envSample.pdf, specularPdf(wo, h, a, a));
+        color = color +  f * throughput * specular * evalSpecular(wo, envSample, a, a) * env * specWeight;
       }
     }
-
-    var brdfSample: Sample;
+    // Sample the BSDF
+    var bsdfSample: Sample;
+    var bsdf: vec3<f32>;
     if (rand() > f) {
-      //Sample the BSDF
-      brdfSample = sampleLambert();
-      bsdf = diffuse * evalLambert(brdfSample);
+      bsdfSample = sampleLambert();
+      bsdf = diffuse * evalLambert(bsdfSample);
     } else {
-      // Sample the BSDF
-      brdfSample = sampleSpecular(wo, m, a, a);
-      bsdf = specular * evalSpecular(wo, brdfSample.wi, a, a) / brdfSample.pdf;
+      bsdfSample = sampleSpecular(wo, m, a, a);
+      bsdf = specular * evalSpecular(wo, bsdfSample, a, a);
     }
-
-    let dir = ONB * brdfSample.wi;
+    
+    throughput = throughput * bsdf;
+    let dir = ONB * bsdfSample.wi;
     ray = Ray(origin, dir);
     hit = intersectScene(ray, false);
     if (hit.index == NO_HIT_IDX) {
-      color = color + bsdfThroughput * bsdf * envColor(dir) * powerHeuristic(brdfSample.pdf, envPdf(dir));
+      let weight = powerHeuristic(bsdfSample.pdf, envPdf(dir));
+      color = color + throughput * envColor(dir) * weight;
       break;
     }
-
-    bsdfThroughput = bsdfThroughput * bsdf;
     bounces = bounces + 1;
     if ( bounces > NUM_BOUNCES ) { break; }
   }
   // Load the previous color value.
   var acc: vec3<f32> = textureLoad(inputTex, vec2<i32>(GID.xy), 0).rgb;
-  acc = vec3<f32>(max(color, vec3<f32>()) + (acc * f32(state.samples)))/(f32(state.samples + 1));
+  acc = vec3<f32>(max(color, vec3<f32>(0f)) + (acc * f32(state.samples)))/(f32(state.samples + 1));
   textureStore(outputTex, vec2<i32>(GID.xy), vec4<f32>(max(acc, vec3<f32>()), 1.0));
 }
