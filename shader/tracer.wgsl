@@ -87,6 +87,24 @@ struct RadianceBins {
   bins: [[stride(16)]] array<RadianceBin>;
 };
 
+struct LuminanceCoord {
+  x: i32;
+  y: i32;
+};
+
+struct LuminanceCoords {
+  coords: [[stride(8)]] array<LuminanceCoord>;
+};
+
+struct LuminanceBin {
+  h0: i32;
+  h1: i32;
+};
+
+struct LuminanceBins {
+  bins: [[stride(8)]] array<LuminanceBin>;
+};
+
 struct Sample {
   wi: vec3<f32>;
   pdf: f32;
@@ -101,8 +119,8 @@ struct Sample {
 [[group(1), binding(3)]] var<storage, read> materials: MaterialIndices;
 [[group(1), binding(4)]] var atlasTex: texture_2d_array<f32>;
 [[group(1), binding(5)]] var envTex: texture_2d<f32>;
-[[group(1), binding(6)]] var lookupTex: texture_2d<i32>;
-[[group(1), binding(7)]] var<storage, read> envRadiance: RadianceBins;
+[[group(1), binding(6)]] var<storage, read> envCoords: LuminanceCoords;
+[[group(1), binding(7)]] var<storage, read> envLuminance: LuminanceBins;
 
 [[group(2), binding(0)]] var<uniform> state: State;
 [[group(2), binding(1)]] var atlasSampler: sampler;
@@ -188,42 +206,43 @@ fn envColor(dir: vec3<f32>) -> vec3<f32> {
   return rgbe.rgb * pow(2.0, rgbe.a * 255.0 - 128.0);
 }
 
-fn envBinLookup(dir: vec3<f32>) -> RadianceBin {
-  let u = (1f + state.envTheta + atan2(dir.z, dir.x) / M_TAU) % 1f;
-  let v = (1f + asin(-dir.y) * INV_PI + 0.5) % 1f;
-  let uv = vec2<f32>(u, v);
-  let dims = textureDimensions(lookupTex, 0);
-  let c = vec2<f32>(dims) * uv;
-  let idx = textureLoad(lookupTex, vec2<i32>(c), 0).r;
-  return envRadiance.bins[idx];
-}
+// fn envBinLookup(dir: vec3<f32>) -> RadianceBin {
+//   let u = (1f + state.envTheta + atan2(dir.z, dir.x) / M_TAU) % 1f;
+//   let v = (1f + asin(-dir.y) * INV_PI + 0.5) % 1f;
+//   let uv = vec2<f32>(u, v);
+//   let dims = textureDimensions(lookupTex, 0);
+//   let c = vec2<f32>(dims) * uv;
+//   let idx = textureLoad(lookupTex, vec2<i32>(c), 0).r;
+//   return envRadiance.bins[idx];
+// }
 
-fn envPdf(wi: vec3<f32>) -> f32 {
-  let numBins = arrayLength(&envRadiance.bins);
-  let bin = envBinLookup(wi);
-  let h0 = cos(bin.y0 * M_PI);
-  let h1 = cos(bin.y1 * M_PI);
-  let segmentArea = M_TAU * (h1 - h0) * (bin.x1 - bin.x0);
-  let nominal = 1f / f32(numBins);
-  return nominal / (abs(segmentArea));
-}
+// fn envPdf(wi: vec3<f32>) -> f32 {
+//   let numBins = arrayLength(&envRadiance.bins);
+//   let bin = envBinLookup(wi);
+//   let h0 = cos(bin.y0 * M_PI);
+//   let h1 = cos(bin.y1 * M_PI);
+//   let segmentArea = M_TAU * (h1 - h0) * (bin.x1 - bin.x0);
+//   let nominal = 1f / f32(numBins);
+//   return nominal / (abs(segmentArea));
+// }
 
 // Solid angle formulation; should reduce clumping near high latitudes
 fn sampleEnv(ONB: mat3x3<f32>) -> Sample {
-  let numBins = arrayLength(&envRadiance.bins);
+  let dims = vec2<f32>(textureDimensions(envTex, 0));
+  let numBins = arrayLength(&envLuminance.bins);
   let idx = i32(hash() % numBins);
-  let bin = envRadiance.bins[idx];
-  let u = -state.envTheta + (bin.x1 - bin.x0) * rand() + bin.x0;
-  let h0 = cos(bin.y0 * M_PI);
-  let h1 = cos(bin.y1 * M_PI);
-  let hi = (h1 - h0) * rand() + h0;
+  let bin = envLuminance.bins[idx];
+  let coordIdx = i32(hash() % u32(bin.h1 - bin.h0)) + bin.h0;
+  let coord = envCoords.coords[coordIdx];
+  let u = -state.envTheta +(f32(coord.x) / dims.x);//-state.envTheta + (bin.x1 - bin.x0) * rand() + bin.x0;
+  let v = f32(coord.y) / dims.y;
   let theta = u * M_TAU;
-  let phi = acos(hi);
+  let phi = v * M_PI;
   let sinPhi = sin(phi);
   let dir = vec3<f32>(cos(theta) * sinPhi, cos(phi), sin(theta) * sinPhi);
-  let segmentArea = M_TAU * (h1 - h0) * (bin.x1 - bin.x0);
-  let nominal: f32 = 1f / f32(numBins);
-  let pdf = nominal / (abs(segmentArea));
+  let binPdf = 1f / f32(numBins);
+  let coordPdf = 1f / f32(bin.h1 - bin.h0);
+  let pdf = binPdf;// M_TAU * binPdf * coordPdf * f32(arrayLength(&envCoords.coords)) / sinPhi;// / //nominal / (f32(bin.h1 - bin.h0) * sinPhi * (1f/ 2097152f));
   return Sample(dir * ONB, pdf);
 }
 
@@ -247,7 +266,7 @@ fn evalLambert(sample: Sample) -> f32 {
   // Lambertian BRDF = Albedo / Pi
   // TODO: the math can be simplified once i'm confident in all the statistical derivations elsewhere
   // https://computergraphics.stackexchange.com/questions/8578
-  return INV_PI * max(0f, sample.wi.z) / sample.pdf;
+  return INV_PI * max(0f, sample.wi.z);// / sample.pdf;
 }
 
 // D for Cook Torrence microfacet BSDF using GGX distribution.
@@ -446,31 +465,31 @@ fn main(
       let shadow = intersectScene(Ray(origin, envDir), true);
       if (shadow.index == NO_HIT_IDX) {
         let env = envColor(envDir);
-        let lambertWeight = powerHeuristic(envSample.pdf, lambertPdf(envDir, normal));
-        color = color + (1f - f) * throughput * diffuse * evalLambert(envSample) * env * lambertWeight;
-        let h = normalize(wo + envSample.wi);
-        let specWeight = powerHeuristic(envSample.pdf, specularPdf(wo, h, a, a));
-        color = color +  f * throughput * specular * evalSpecular(wo, envSample, a, a) * env * specWeight;
+        //let lambertWeight = powerHeuristic(envSample.pdf, lambertPdf(envDir, normal));
+        color = color + throughput * diffuse * evalLambert(envSample) * env;// * lambertWeight;
+        // let h = normalize(wo + envSample.wi);
+        // let specWeight = powerHeuristic(envSample.pdf, specularPdf(wo, h, a, a));
+        // color = color +  f * throughput * specular * evalSpecular(wo, envSample, a, a) * env * specWeight;
       }
     }
     // Sample the BSDF
     var bsdfSample: Sample;
     var bsdf: vec3<f32>;
-    if (rand() > f) {
+    // if (rand() > f) {
       bsdfSample = sampleLambert();
       bsdf = diffuse * evalLambert(bsdfSample);
-    } else {
-      bsdfSample = sampleSpecular(wo, m, a, a);
-      bsdf = specular * evalSpecular(wo, bsdfSample, a, a);
-    }
+    // } else {
+    //   bsdfSample = sampleSpecular(wo, m, a, a);
+    //   bsdf = specular * evalSpecular(wo, bsdfSample, a, a);
+    // }
     
     throughput = throughput * bsdf;
     let dir = ONB * bsdfSample.wi;
     ray = Ray(origin, dir);
     hit = intersectScene(ray, false);
     if (hit.index == NO_HIT_IDX) {
-      let weight = powerHeuristic(bsdfSample.pdf, envPdf(dir));
-      color = color + throughput * envColor(dir) * weight;
+      // let weight = powerHeuristic(bsdfSample.pdf, envPdf(dir));
+      // color = color + throughput * envColor(dir) * weight;
       break;
     }
     bounces = bounces + 1;

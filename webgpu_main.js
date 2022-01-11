@@ -202,8 +202,10 @@ async function PathTracer(scenePath, resolution) {
     let atlasTexture = createAtlasTetxure();
     let envGenerator = new EnvironmentGenerator(assets[scene.environment]);
     let envTexture = await envGenerator.createLuminanceMap(device);
-    let envLookup = await envGenerator.createLookupTexture(device);
-    let radianceBinBuffer = await envGenerator.createLuminanceStrataBuffer();
+    const luminanceBinBuffer = envGenerator.createHistogramBuffer();
+    const luminanceCoordBuffer = envGenerator.createEnvCoordBuffer();
+    //let envLookup = await envGenerator.createLookupTexture(device);
+    //let radianceBinBuffer = await envGenerator.createLuminanceStrataBuffer();
     storageBindGroup = device.createBindGroup({
       layout: tracerPipeline.getBindGroupLayout(1),
       entries: [
@@ -245,13 +247,16 @@ async function PathTracer(scenePath, resolution) {
         },
         {
           binding: 6,
-          resource: envLookup.createView(),
+          resource: {
+            buffer: luminanceCoordBuffer.createWGPUBuffer(device, GPUBufferUsage.STORAGE),
+            size: luminanceCoordBuffer.size,
+          },
         },
         {
           binding: 7,
           resource: {
-            buffer: radianceBinBuffer.createWGPUBuffer(device, GPUBufferUsage.STORAGE),
-            size: radianceBinBuffer.size,
+            buffer: luminanceBinBuffer.createWGPUBuffer(device, GPUBufferUsage.STORAGE),
+            size: luminanceBinBuffer.size,
           },
         },
       ],

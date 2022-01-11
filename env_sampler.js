@@ -1,6 +1,8 @@
 import {
   WGSLPackedStructArray,
   RadianceBinStruct,
+  LuminanceBinStruct,
+  LuminanceCoordStruct,
 } from './webgpu_utils.js';
 
 export class EnvironmentGenerator {
@@ -15,13 +17,17 @@ export class EnvironmentGenerator {
     this.data = pixels.data;
     this.radiance = new Array(this.data.length / 4);
     this.lookupData = new Int16Array(this.img.width * this.img.height);
-    this.strata = this._createLuminanceStrata();
+    //this.strata = this._createLuminanceStrata();
     //this.paintLookupDebugImage();
     //this.paintDebugImage();
     this.totalRadiance = 0;
     this.brightestTexel = 0;
-    this._sortPixels();
-    this.paintSortedDebugImage();
+    this.luminanceHist = null;
+    this.uvMap = null
+    //this._sortPixels();
+    this.createLuminanceHistogram();
+    //this.paintSortedDebugImage();
+    //createLuminanceHistogram
   }
 
   _luma(c) {
@@ -102,12 +108,49 @@ export class EnvironmentGenerator {
         let rad = this._getRadiance(x, y);
         this.brightestTexel = Math.max(rad, this.brightestTexel);
         this.totalRadiance += rad;
-        const uv = [x / this.img.width, y / this.img.height];
+        const uv = {x, y};
         this.sortedLuminance[y * this.img.width + x] = { rad, uv };
       }
     }
     this.sortedLuminance.sort((a, b) => { return b.rad - a.rad });
     return;
+  }
+
+  createLuminanceHistogram() {
+    this._sortPixels();
+    const numBins = Math.min(256, Math.ceil(this.totalRadiance / this.brightestTexel));
+    const binSize = this.totalRadiance / numBins;
+    this.uvMap = this.sortedLuminance.map(l => l.uv);
+    this.luminanceHist = [];
+    let currentLuminance = 0;
+    for (let i = 0; i < this.sortedLuminance.length; i++) {
+      if (currentLuminance >= binSize) {
+        const prev = this.luminanceHist.length > 0 ? this.luminanceHist[this.luminanceHist.length - 1] : 0;
+        this.luminanceHist.push({h0: prev, h1: i});
+        currentLuminance = 0;
+      }
+      const lum = this.sortedLuminance[i];
+      currentLuminance += lum.rad;
+    }
+    const last = this.luminanceHist[this.luminanceHist.length - 1];
+    console.log(this.luminanceHist);
+    this.luminanceHist.push({h0: last, h1: this.uvMap.length});
+  }
+
+  createHistogramBuffer() {
+    let luminanceBinBuffer = new WGSLPackedStructArray(LuminanceBinStruct, this.luminanceHist.length);
+    for (const bin of this.luminanceHist) {
+      luminanceBinBuffer.push(new LuminanceBinStruct(bin));
+    }
+    return luminanceBinBuffer
+  }
+
+  createEnvCoordBuffer() {
+    let luminanceCoordBuffer = new WGSLPackedStructArray(LuminanceCoordStruct, this.uvMap.length);
+    for (const bin of this.uvMap) {
+      luminanceCoordBuffer.push(new LuminanceCoordStruct(bin));
+    }
+    return luminanceCoordBuffer
   }
 
   // _biTreeSplitting(totalRadiance, minRadiance) {
@@ -217,7 +260,6 @@ export class EnvironmentGenerator {
       let idx = Math.floor(this.sortedLuminance.length * i / canvas.width);
       let l = Math.floor(canvas.height * (this.sortedLuminance[idx].rad / this.brightestTexel));
       ctx.fillRect(i, 0, 1, l);
-      debugger;
     }
     document.body.appendChild(canvas);
   }
@@ -234,7 +276,7 @@ export class EnvironmentGenerator {
         totalRadiance += rad;
       }
     }
-    console.log(totalRadiance);
+    console.log(totalRadiance, brightestTexel);
     let minRadiance = Math.max(totalRadiance / 256, brightestTexel / 2);
     let strata = this._biTreeSplitting(totalRadiance, minRadiance);
     console.log("Processing env took", (performance.now() - time) / 1000.0, "seconds for", strata.length, "bins");

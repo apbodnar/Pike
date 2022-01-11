@@ -214,6 +214,24 @@ export class RadianceBinStruct extends WGSLPackedStruct {
   }
 }
 
+export class LuminanceBinStruct extends WGSLPackedStruct {
+  static get desc() {
+    return [
+      { name: "h0", type: Int32Array, count: 1 },
+      { name: "h1", type: Int32Array, count: 1 },
+    ];
+  }
+}
+
+export class LuminanceCoordStruct extends WGSLPackedStruct {
+  static get desc() {
+    return [
+      { name: "x", type: Int32Array, count: 1 },
+      { name: "y", type: Int32Array, count: 1 },
+    ];
+  }
+}
+
 export class PostprocessParamsStruct extends WGSLPackedStruct {
   static get desc() {
     return [
