@@ -235,7 +235,7 @@ export class Node {
       for (let i = 0; i < idxCache.length; i++) {
         let sAf = surfacesFront[i];
         let sAb = surfacesBack[surfacesBack.length - 1 - i];
-        let cost = 1 + (sAf / parentSurfaceArea) * 1 * (i + 1) + (sAb / parentSurfaceArea) * 1 * (idxCache.length - 1 - i);
+        let cost = 15 + (sAf / parentSurfaceArea) * 20 * (i + 1) + (sAb / parentSurfaceArea) * 20 * (idxCache.length - 1 - i);
         if (cost < bestCost) {
           bestCost = cost;
           this.splitIndex = i + 1;

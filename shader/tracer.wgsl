@@ -123,9 +123,9 @@ fn rand() -> f32 {
 // From: "Building an Orthonormal Basis, Revisited - Pixar et. al"
 fn branchlessONB(n: vec3<f32>) -> mat3x3<f32> {
   // sign() performs catastrophically slowly last checked
-  let lastBit: u32 = bitcast<u32>(n.z) & 2147483648u;
-  let sign = bitcast<f32>(bitcast<u32>(-1f) | lastBit);
-  // let sign = select(-1f, 1f, n.z > 0f);
+  //let lastBit: u32 = bitcast<u32>(n.z) & 2147483648u;
+  //let sign = bitcast<f32>(bitcast<u32>(-1f) | lastBit);
+  let sign = select(-1f, 1f, n.z > 0f);
   //let sign = sign(n.z);
   let a = -1f / (sign + n.z);
   let b = n.x * n.y * a;

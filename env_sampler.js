@@ -13,10 +13,15 @@ export class EnvironmentGenerator {
     ctx.drawImage(this.img, 0, 0, this.img.width, this.img.height);
     let pixels = ctx.getImageData(0, 0, this.img.width, this.img.height);
     this.data = pixels.data;
+    this.radiance = new Array(this.data.length / 4);
     this.lookupData = new Int16Array(this.img.width * this.img.height);
     this.strata = this._createLuminanceStrata();
     //this.paintLookupDebugImage();
     //this.paintDebugImage();
+    this.totalRadiance = 0;
+    this.brightestTexel = 0;
+    this._sortPixels();
+    this.paintSortedDebugImage();
   }
 
   _luma(c) {
@@ -32,15 +37,11 @@ export class EnvironmentGenerator {
   }
 
   _getRadiance(x, y) {
-    let normalized = [0, 0, 0];
     let color = this._pixelAt(x, y);
     //let phi = (y / img.height) * Math.PI;
     let scale = 1;//Math.sin(phi);
     let power = scale * Math.pow(2.0, color[3] - 128);
-    normalized[0] = power * color[0] / 255.0;
-    normalized[1] = power * color[1] / 255.0;
-    normalized[2] = power * color[2] / 255.0;
-    return this._luma(normalized);
+    return power * this._luma(color) / 255.0;
   }
 
   _setLookupIndex(bin, i) {
@@ -83,6 +84,30 @@ export class EnvironmentGenerator {
     }
     biSplit(totalRadiance, 0, 0, this.img.width, this.img.height);
     return boxes;
+  }
+
+  _luminance(pixel) {
+    const r = pixel[i];
+    const g = pixel[i + 1];
+    const b = pixel[i + 2];
+    const a = pixel[i + 3];
+    const power = Math.pow(2.0, a - 128);
+    return power * this._luma([r, g, b]) / 255;
+  }
+
+  _sortPixels() {
+    this.sortedLuminance = new Array(this.data.length / 4);
+    for (let y = 0; y < this.img.height; y++) {
+      for (let x = 0; x < this.img.width; x++) {
+        let rad = this._getRadiance(x, y);
+        this.brightestTexel = Math.max(rad, this.brightestTexel);
+        this.totalRadiance += rad;
+        const uv = [x / this.img.width, y / this.img.height];
+        this.sortedLuminance[y * this.img.width + x] = { rad, uv };
+      }
+    }
+    this.sortedLuminance.sort((a, b) => { return b.rad - a.rad });
+    return;
   }
 
   // _biTreeSplitting(totalRadiance, minRadiance) {
@@ -166,7 +191,7 @@ export class EnvironmentGenerator {
     canvas.height = this.img.height;
     const ctx = canvas.getContext('2d');
     for (let i = 0; i < this.lookupData.length; i++) {
-      const idx = this.lookupData[i]; 
+      const idx = this.lookupData[i];
       ctx.fillStyle = `rgb(
         ${Math.floor(255 * Math.abs(Math.sin(idx * 2)))},
         ${Math.floor(255 * Math.abs(Math.cos(idx)))},
@@ -177,6 +202,22 @@ export class EnvironmentGenerator {
       const x1 = stratum.x1;
       const y1 = stratum.y1;
       ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+    }
+    document.body.appendChild(canvas);
+  }
+
+  paintSortedDebugImage() {
+    const canvas = document.createElement('canvas');
+    canvas.className = "debug"
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'red';
+    for (let i = 0; i < canvas.width; i++) {
+      let idx = Math.floor(this.sortedLuminance.length * i / canvas.width);
+      let l = Math.floor(canvas.height * (this.sortedLuminance[idx].rad / this.brightestTexel));
+      ctx.fillRect(i, 0, 1, l);
+      debugger;
     }
     document.body.appendChild(canvas);
   }
@@ -193,6 +234,7 @@ export class EnvironmentGenerator {
         totalRadiance += rad;
       }
     }
+    console.log(totalRadiance);
     let minRadiance = Math.max(totalRadiance / 256, brightestTexel / 2);
     let strata = this._biTreeSplitting(totalRadiance, minRadiance);
     console.log("Processing env took", (performance.now() - time) / 1000.0, "seconds for", strata.length, "bins");

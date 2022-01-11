@@ -26,10 +26,11 @@ export async function getText(path) {
 }
 
 export async function getImage(path) {
-  const img = new Image();
-  img.src = path;
-  await img.decode();
-  return img;
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {resolve(img)};
+    img.src = path;
+  });
 }
 
 export function uploadDataUrl(path, blob, callback) {
