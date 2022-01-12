@@ -45,8 +45,7 @@ export class EnvironmentGenerator {
   _getRadiance(x, y) {
     let color = this._pixelAt(x, y);
     //let phi = (y / img.height) * Math.PI;
-    let scale = 1;//Math.sin(phi);
-    let power = scale * Math.pow(2.0, color[3] - 128);
+    let power = Math.pow(2.0, color[3] - 128);
     return power * this._luma(color) / 255.0;
   }
 

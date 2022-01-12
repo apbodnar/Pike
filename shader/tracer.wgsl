@@ -242,7 +242,7 @@ fn sampleEnv(ONB: mat3x3<f32>) -> Sample {
   let dir = vec3<f32>(cos(theta) * sinPhi, cos(phi), sin(theta) * sinPhi);
   let binPdf = 1f / f32(numBins);
   let coordPdf = 1f / f32(bin.h1 - bin.h0);
-  let pdf = binPdf;// M_TAU * binPdf * coordPdf * f32(arrayLength(&envCoords.coords)) / sinPhi;// / //nominal / (f32(bin.h1 - bin.h0) * sinPhi * (1f/ 2097152f));
+  let pdf = M_TAU * binPdf * coordPdf * f32(arrayLength(&envCoords.coords)) / sinPhi;// / //nominal / (f32(bin.h1 - bin.h0) * sinPhi * (1f/ 2097152f));
   return Sample(dir * ONB, pdf);
 }
 
