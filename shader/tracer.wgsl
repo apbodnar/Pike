@@ -4,6 +4,7 @@ let LEAF_SIZE: i32 = 4;
 let M_PI: f32 = 3.141592653589793;
 let M_TAU: f32 = 6.283185307179586;
 let INV_PI: f32 = 0.3183098861837907;
+let INV_TAU: f32 = 0.15915494309189535;
 let NUM_BOUNCES: i32 = 5;
 let NO_HIT_IDX: i32 = -1;
 
@@ -234,15 +235,16 @@ fn sampleEnv(ONB: mat3x3<f32>) -> Sample {
   let bin = envLuminance.bins[idx];
   let coordIdx = i32(hash() % u32(bin.h1 - bin.h0)) + bin.h0;
   let coord = envCoords.coords[coordIdx];
-  let u = -state.envTheta +(f32(coord.x) / dims.x);//-state.envTheta + (bin.x1 - bin.x0) * rand() + bin.x0;
-  let v = f32(coord.y) / dims.y;
+  let u = -state.envTheta +((0.5 + f32(coord.x)) / dims.x);//-state.envTheta + (bin.x1 - bin.x0) * rand() + bin.x0;
+  let v = (0.5 + f32(coord.y)) / dims.y;
   let theta = u * M_TAU;
   let phi = v * M_PI;
   let sinPhi = sin(phi);
   let dir = vec3<f32>(cos(theta) * sinPhi, cos(phi), sin(theta) * sinPhi);
   let binPdf = 1f / f32(numBins);
-  let coordPdf = 1f / f32(bin.h1 - bin.h0);
-  let pdf = M_TAU * binPdf * coordPdf * f32(arrayLength(&envCoords.coords)) / sinPhi;// / //nominal / (f32(bin.h1 - bin.h0) * sinPhi * (1f/ 2097152f));
+  let coordPdf = f32(arrayLength(&envCoords.coords)) / f32(bin.h1 - bin.h0);
+  let spherePdf = INV_PI * INV_TAU / sinPhi;
+  let pdf = binPdf * coordPdf * spherePdf;
   return Sample(dir * ONB, pdf);
 }
 
@@ -266,7 +268,7 @@ fn evalLambert(sample: Sample) -> f32 {
   // Lambertian BRDF = Albedo / Pi
   // TODO: the math can be simplified once i'm confident in all the statistical derivations elsewhere
   // https://computergraphics.stackexchange.com/questions/8578
-  return INV_PI * max(0f, sample.wi.z);// / sample.pdf;
+  return INV_PI * max(0f, sample.wi.z) / sample.pdf;
 }
 
 // D for Cook Torrence microfacet BSDF using GGX distribution.

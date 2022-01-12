@@ -116,6 +116,7 @@ export class EnvironmentGenerator {
   }
 
   createLuminanceHistogram() {
+    const time = performance.now();
     this._sortPixels();
     const numBins = Math.min(256, Math.ceil(this.totalRadiance / this.brightestTexel));
     const binSize = this.totalRadiance / numBins;
@@ -124,16 +125,16 @@ export class EnvironmentGenerator {
     let currentLuminance = 0;
     for (let i = 0; i < this.sortedLuminance.length; i++) {
       if (currentLuminance >= binSize) {
-        const prev = this.luminanceHist.length > 0 ? this.luminanceHist[this.luminanceHist.length - 1] : 0;
+        const prev = this.luminanceHist.length > 0 ? this.luminanceHist[this.luminanceHist.length - 1].h1 : 0;
         this.luminanceHist.push({h0: prev, h1: i});
         currentLuminance = 0;
       }
       const lum = this.sortedLuminance[i];
       currentLuminance += lum.rad;
     }
-    const last = this.luminanceHist[this.luminanceHist.length - 1];
-    console.log(this.luminanceHist);
+    const last = this.luminanceHist[this.luminanceHist.length - 1].h1;
     this.luminanceHist.push({h0: last, h1: this.uvMap.length});
+    console.log("Sorting took:", (performance.now() - time) / 1000, "seconds for", this.luminanceHist.length ,"bins.");
   }
 
   createHistogramBuffer() {
