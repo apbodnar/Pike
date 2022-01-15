@@ -107,7 +107,7 @@ export class EnvironmentGenerator {
         let rad = this._getRadiance(x, y);
         this.brightestTexel = Math.max(rad, this.brightestTexel);
         this.totalRadiance += rad;
-        const uv = {x, y};
+        const uv = { x, y };
         this.sortedLuminance[y * this.img.width + x] = { rad, uv };
       }
     }
@@ -126,15 +126,15 @@ export class EnvironmentGenerator {
     for (let i = 0; i < this.sortedLuminance.length; i++) {
       if (currentLuminance >= binSize) {
         const prev = this.luminanceHist.length > 0 ? this.luminanceHist[this.luminanceHist.length - 1].h1 : 0;
-        this.luminanceHist.push({h0: prev, h1: i});
+        this.luminanceHist.push({ h0: prev, h1: i });
         currentLuminance = 0;
       }
       const lum = this.sortedLuminance[i];
       currentLuminance += lum.rad;
     }
     const last = this.luminanceHist[this.luminanceHist.length - 1].h1;
-    this.luminanceHist.push({h0: last, h1: this.uvMap.length});
-    console.log("Sorting took:", (performance.now() - time) / 1000, "seconds for", this.luminanceHist.length ,"bins.");
+    this.luminanceHist.push({ h0: last, h1: this.uvMap.length });
+    console.log("Sorting took:", (performance.now() - time) / 1000, "seconds for", this.luminanceHist.length, "bins.");
   }
 
   createHistogramBuffer() {
@@ -153,58 +153,39 @@ export class EnvironmentGenerator {
     return luminanceCoordBuffer
   }
 
-  // _biTreeSplitting(totalRadiance, minRadiance) {
-  //   let boxes = []
-  //   let biSplit = (radiance, x0, y0, x1, y1, depth) => {
-  //     if (depth >= 10 || radiance <= minRadiance || (y1 - y0) * (x1 - x0) < 2) {
-  //       const box = { x0, y0, x1, y1 };
-  //       this._setLookupIndex(box, boxes.length);
-  //       boxes.push(box);
-  //       return;
-  //     }
-  //     let subRadiance = 0;
-  //     let vertSplit = x1 - x0 > y1 - y0;
-  //     let xs, ys;
-  //     if (vertSplit) {
-  //       xs = x0;
-  //       ys = y1;
-  //       for (; xs < this.img.width; xs++) {
-  //         let colEnergy = 0;
-  //         for (let y = y0; y < ys; y++) {
-  //           colEnergy += this._getRadiance(xs, y);
-  //         }
-  //         if (subRadiance + colEnergy < radiance / 2) {
-  //           subRadiance += colEnergy;
-  //         } else {
-  //           break;
-  //         }
-  //       }
-  //     } else {
-  //       xs = x1;
-  //       ys = y0;
-  //       for (; ys < this.img.height; ys++) {
-  //         let colEnergy = 0;
-  //         for (let x = x0; x < xs; x++) {
-  //           colEnergy += this._getRadiance(x, ys);
-  //         }
-  //         if (subRadiance + colEnergy < radiance / 2) {
-  //           subRadiance += colEnergy;
-  //         } else {
-  //           break;
-  //         }
-  //       }
-  //     }
-  //     if (vertSplit) {
-  //       biSplit(subRadiance, x0, y0, xs, ys, depth + 1);
-  //       biSplit(radiance - subRadiance, xs, y0, x1, y1, depth + 1);
-  //     } else {
-  //       biSplit(subRadiance, x0, y0, xs, ys, depth + 1);
-  //       biSplit(radiance - subRadiance, x0, ys, x1, y1, depth + 1);
-  //     }
-  //   }
-  //   biSplit(totalRadiance, 0, 0, this.img.width, this.img.height, 0);
-  //   return boxes;
-  // }
+  createPdfTexture(device) {
+    const pdfBuffer = new Float32Array(this.uvMap.length);
+    for (const bin of this.luminanceHist) {
+      for (let i = bin.h0; i < bin.h1; i++) {
+        const coord = this.uvMap[i];
+        const idx = coord.x + this.img.width * coord.y;
+        const binPdf = 1 / this.luminanceHist.length;
+        const coordPdf = this.uvMap.length / (bin.h1 - bin.h0);
+        const spherePdf = 1 / (Math.PI * Math.PI * 2);
+        const pdf = binPdf * coordPdf * spherePdf;
+        pdfBuffer[idx] = pdf;
+      }
+    }
+    const extent = {
+      width: this.img.width,
+      height: this.img.height,
+    };
+    const layout = {
+      bytesPerRow: this.img.width * 4,
+      rowsPerImage: this.img.height,
+    }
+    const tex = device.createTexture({
+      size: extent,
+      dimension: '2d',
+      format: 'r32float',
+      usage:
+        GPUTextureUsage.TEXTURE_BINDING |
+        GPUTextureUsage.COPY_DST |
+        GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+    device.queue.writeTexture({ texture: tex }, pdfBuffer, layout, extent);
+    return tex;
+  }
 
   paintDebugImage() {
     const canvas = document.createElement('canvas');

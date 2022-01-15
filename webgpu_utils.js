@@ -87,15 +87,19 @@ export class WGSLPackedStruct {
 
   createWGPUBuffer(device, usage) {
     const buffer = this.toArrayBuffer();
-    const db = device.createBuffer({
-      size: buffer.byteLength,
-      mappedAtCreation: true,
-      usage,
-    });
-    new Uint8Array(db.getMappedRange()).set(new Uint8Array(buffer));
-    db.unmap();
-    return db;
+    return arrayBufferToWGPUBuffer(buffer, device, usage);
   }
+}
+
+export function arrayBufferToWGPUBuffer(buffer, device, usage) {
+  const db = device.createBuffer({
+    size: buffer.byteLength,
+    mappedAtCreation: true,
+    usage,
+  });
+  new Uint8Array(db.getMappedRange()).set(new Uint8Array(buffer));
+  db.unmap();
+  return db;
 }
 
 export class WGSLPackedStructArray {
@@ -239,3 +243,4 @@ export class PostprocessParamsStruct extends WGSLPackedStruct {
     ];
   }
 }
+

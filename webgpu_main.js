@@ -154,10 +154,10 @@ async function PathTracer(scenePath, resolution) {
     time = new Date().getTime();
     let bvhArray = bvh.serializeTree();
     console.log("BVH serialized in", (new Date().getTime() - time) / 1000.0, " seconds");
-    let attributeBuffer = new WGSLPackedStructArray(VertexAttributeStruct, bvh.numLeafTris * 3);
-    let bvhBuffer = new WGSLPackedStructArray(BVHNodeStruct, bvhArray.length);
-    let trianglesBuffer = new WGSLPackedStructArray(TriangleStruct, bvh.numLeafTris * 3);
-    let materialsBuffer = new WGSLPackedStructArray(MaterialIndexStruct, materials.length);
+    const attributeBuffer = new WGSLPackedStructArray(VertexAttributeStruct, bvh.numLeafTris * 3);
+    const bvhBuffer = new WGSLPackedStructArray(BVHNodeStruct, bvhArray.length);
+    const trianglesBuffer = new WGSLPackedStructArray(TriangleStruct, bvh.numLeafTris * 3);
+    const materialsBuffer = new WGSLPackedStructArray(MaterialIndexStruct, materials.length);
     materials.forEach((mat) => {
       materialsBuffer.push(new MaterialIndexStruct({
         diffMap: mat.diffuseIndex,
@@ -199,11 +199,12 @@ async function PathTracer(scenePath, resolution) {
         }
       }
     }
-    let atlasTexture = createAtlasTetxure();
-    let envGenerator = new EnvironmentGenerator(assets[scene.environment]);
-    let envTexture = await envGenerator.createLuminanceMap(device);
+    const atlasTexture = createAtlasTetxure();
+    const envGenerator = new EnvironmentGenerator(assets[scene.environment]);
+    const envTexture = await envGenerator.createLuminanceMap(device);
     const luminanceBinBuffer = envGenerator.createHistogramBuffer();
     const luminanceCoordBuffer = envGenerator.createEnvCoordBuffer();
+    const pdfTexture = envGenerator.createPdfTexture(device);
     //let envLookup = await envGenerator.createLookupTexture(device);
     //let radianceBinBuffer = await envGenerator.createLuminanceStrataBuffer();
     storageBindGroup = device.createBindGroup({
@@ -258,6 +259,10 @@ async function PathTracer(scenePath, resolution) {
             buffer: luminanceBinBuffer.createWGPUBuffer(device, GPUBufferUsage.STORAGE),
             size: luminanceBinBuffer.size,
           },
+        },
+        {
+          binding: 8,
+          resource: pdfTexture.createView(),
         },
       ],
     });
@@ -393,8 +398,8 @@ async function PathTracer(scenePath, resolution) {
 
   function createSampler() {
     return device.createSampler({
-      magFilter: 'linear',
-      minFilter: 'linear',
+      magFilter: 'nearest',
+      minFilter: 'nearest',
       addressModeU: 'repeat',
       addressModeV: 'repeat',
     });
