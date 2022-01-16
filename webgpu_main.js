@@ -396,10 +396,10 @@ async function PathTracer(scenePath, resolution) {
     });
   }
 
-  function createSampler() {
+  function createSampler(filter) {
     return device.createSampler({
-      magFilter: 'nearest',
-      minFilter: 'nearest',
+      magFilter: filter,
+      minFilter: filter,
       addressModeU: 'repeat',
       addressModeV: 'repeat',
     });
@@ -450,11 +450,11 @@ async function PathTracer(scenePath, resolution) {
         },
         {
           binding: 1,
-          resource: createSampler(),
+          resource: createSampler('linear'),
         },
         {
           binding: 2,
-          resource: createSampler(),
+          resource: createSampler('nearest'),
         },
       ],
     });

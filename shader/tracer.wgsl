@@ -186,7 +186,7 @@ fn processLeaf(leaf: Node, ray: Ray, result: ptr<function, Hit>){
 
 fn envColor(dir: vec3<f32>) -> vec3<f32> {
   let u = state.envTheta + atan2(dir.z, dir.x) / M_TAU;
-  let v = asin(-dir.y) * INV_PI + 0.5;
+  let v = acos(dir.y) * INV_PI;
   let c = vec2<f32>(u, v);
   let rgbe = textureSampleLevel(envTex, envSampler, c, 0f);
   return rgbe.rgb * pow(2.0, rgbe.a * 255.0 - 128.0);
@@ -195,9 +195,11 @@ fn envColor(dir: vec3<f32>) -> vec3<f32> {
 fn envPdf(dir: vec3<f32>) -> f32 {
   let dims = vec2<f32>(textureDimensions(envTex, 0));
   let u = (1f + state.envTheta + atan2(dir.z, dir.x) / M_TAU) % 1f;
-  let v = asin(-dir.y) * INV_PI + 0.5;
+  let v = acos(dir.y) * INV_PI;
   let c = vec2<i32>(vec2<f32>(u, v) * dims);
-  return textureLoad(pdfTex, c, 0).r;
+  let phi = v * M_PI;
+  let sinPhi = sin(phi);
+  return textureLoad(pdfTex, c, 0).r / sinPhi;
 }
 
 // Solid angle formulation; should reduce clumping near high latitudes
