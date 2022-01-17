@@ -24,7 +24,7 @@ export class EnvironmentGenerator {
     this.uvMap = null
     //this._sortPixels();
     this.createLuminanceHistogram();
-    this.paintSortedDebugImage();
+    // this.paintSortedDebugImage();
     //createLuminanceHistogram
   }
 

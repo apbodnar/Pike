@@ -50,8 +50,6 @@ async function PathTracer(scenePath, resolution) {
     requiredLimits: adapter.limits,
   });
   let context;
-  const LEAF_SIZE = 4;
-
   function getMaterial(transforms, group, assets, basePath) {
     let material = {};
     let diffuseIndex = null;
@@ -120,6 +118,12 @@ async function PathTracer(scenePath, resolution) {
     return material;
   }
 
+  function maskTriIndex(index, numTris) {
+    // Protect the sign bit?
+    let mask = numTris << 24;
+    return mask | index;
+  }
+
   async function initBVH(assets) {
     let scene = JSON.parse(assets[scenePath]);
     let geometry = [];
@@ -149,7 +153,7 @@ async function PathTracer(scenePath, resolution) {
     let time = new Date().getTime();
     console.log("Building BVH:", geometry.length, "triangles");
     time = new Date().getTime();
-    bvh = new BVH(geometry, LEAF_SIZE);
+    bvh = new BVH(geometry);
     console.log("BVH built in ", (new Date().getTime() - time) / 1000.0, " seconds.  Depth: ", bvh.depth);
     time = new Date().getTime();
     let bvhArray = bvh.serializeTree();
@@ -174,7 +178,7 @@ async function PathTracer(scenePath, resolution) {
         index: i,
         left: node.leaf ? -1 : e.left,
         right: node.leaf ? -1 : e.right,
-        triangles: node.leaf ? triIndex : -1,
+        triangles: node.leaf ? maskTriIndex(triIndex, node.getleafSize()) : -1,
         boxMin: node.boundingBox.min,
         boxMax: node.boundingBox.max,
       }));
@@ -298,7 +302,7 @@ async function PathTracer(scenePath, resolution) {
       lastDraw = performance.now();
     }
     const rate = Math.round(samples * 1000 / (performance.now() - lastDraw));
-    elements.sampleRateElement.value = rate !== Infinity ? rate : 0;
+    elements.sampleRateElement.value = rate && rate !== Infinity ? rate : 0;
     const tileSizeX = 16;
     const tileSizeY = 16;
     const ray = camera.getCameraRay();
@@ -378,6 +382,9 @@ async function PathTracer(scenePath, resolution) {
           code: quadWGSL,
         }),
         entryPoint: 'vert_main',
+        constants: {
+          0: 3, // leafSize
+        },
       },
       fragment: {
         module: device.createShaderModule({

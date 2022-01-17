@@ -22,7 +22,7 @@ export class WGSLPackedStruct {
     const view = new DataView(buffer);
     let offset = 0;
     for (const member of this.members) {
-      let nextMemberOffset = offset + this.constructor._getMemberAlignment(member);
+      let nextMemberOffset = offset + this.constructor.getMemberAlignment(member);
       for (let i = 0; i < member.count; i++) {
         const v = Array.isArray(member.value) ? member.value : [member.value];
         switch (member.type) {
@@ -45,22 +45,12 @@ export class WGSLPackedStruct {
     return buffer;
   }
 
-  static _getPadding(offset, align, member) {
-    const room = align - offset % align;
-    const size = this._getMemberAlignment(member);
-    if (room < size) {
-      return room;
-    } else {
-      return 0;
-    }
-  }
-
   static getStride() {
     const desc = this.desc;
-    let structAlignment = Math.max(...desc.map(m => this._getMemberAlignment(m)));
+    let structAlignment = Math.max(...desc.map(m => this.getMemberAlignment(m)));
     let offset = 0;
     for (const member of desc) {
-      offset += this._getMemberAlignment(member);
+      offset += this.getMemberAlignment(member);
     }
     const unaligned = offset % structAlignment;
     if (offset % structAlignment !== 0) {
@@ -69,8 +59,12 @@ export class WGSLPackedStruct {
     return offset;
   }
 
-  static _getMemberAlignment(m) {
+  static getMemberAlignment(m) {
     return this._nextPOT(this._getMemberSize(m))
+  }
+
+  static getMemberAlignments() {
+    return this.desc.map((m) => this.getMemberAlignment(m));
   }
 
   static _getMemberSize(m) {
@@ -104,14 +98,43 @@ export function arrayBufferToWGPUBuffer(buffer, device, usage) {
 
 export class WGSLPackedStructArray {
   constructor(type, count) {
+    this.memberAlignments = type.getMemberAlignments();
     this.stride = type.getStride();
     this.offset = 0;
     this.buf = new ArrayBuffer(this.stride * count);
+    this.dataView = new DataView(this.buf);
     this.view = new Uint8Array(this.buf);
   }
 
+  _setArrayBuffer(struct) {
+    let offset = this.offset;
+    for (let i=0; i< struct.members.length; i++) {
+      const member = struct.members[i];
+      let nextMemberOffset = offset + this.memberAlignments[i];
+      for (let i = 0; i < member.count; i++) {
+        const v = Array.isArray(member.value) ? member.value : [member.value];
+        switch (member.type) {
+          case Int32Array:
+            this.dataView.setInt32(offset, v[i], true);
+            break;
+          case Float32Array:
+            this.dataView.setFloat32(offset, v[i], true);
+            break;
+          case Uint32Array:
+            this.dataView.setUint32(offset, v[i], true);
+            break;
+          default:
+            throw new Error('Unsupported member type');
+        }
+        offset += member.type.BYTES_PER_ELEMENT;
+      }
+      offset = nextMemberOffset;
+    }
+  }
+
   push(struct) {
-    this.view.set(new Uint8Array(struct.toArrayBuffer()), this.offset);
+    //this.view.set(new Uint8Array(struct.toArrayBuffer()), this.offset);
+    this._setArrayBuffer(struct);
     this.offset += this.stride;
   }
 

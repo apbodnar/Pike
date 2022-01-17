@@ -60,6 +60,14 @@ export class Vec3 {
     return [Math.min(v1[0], v2[0]), Math.min(v1[1], v2[1]), Math.min(v1[2], v2[2])]
   }
 
+  static gte(v1, v2) {
+    return [v1[0] >= v2[0], v1[1] >= v2[1], v1[2] >= v2[2]]
+  }
+
+  static any(v) {
+    return v[0] || v[1] || v[2];
+  }
+
   static rotateX(v, a) {
     let x = v[0],
       y = v[1],

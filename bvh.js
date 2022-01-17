@@ -2,30 +2,33 @@ import { Vec3 } from './vector.js'
 import { Queue } from './utility.js'
 
 export class BVH {
-  constructor(triangles, maxTris) {
+  constructor(triangles) {
     let xIndices = triangles.map((_, i) => { return i });
     let yIndices = Array.from(xIndices);
     let zIndices = Array.from(yIndices);
-    this.maxTriangles = maxTris;
     this.triangles = triangles;
     this.depth = 0;
     this._sortIndices(xIndices, 0);
     this._sortIndices(yIndices, 1);
     this._sortIndices(zIndices, 2);
     this._numLeafTris = 0;
+    this.largestLeaf = 0;
     this.root = this.buildTree([xIndices, yIndices, zIndices], this.depth);
+    console.log("Largest leaf:", this.largestLeaf);
     //const r = this.buildTree2([xIndices, yIndices, zIndices])
   }
 
   buildTree(indices, depth) {
     this.depth = Math.max(depth, this.depth);
     let root = new Node(this.triangles, indices);
+    root.setSplit();
     const count = root.indices[root.splitAxis || 0].length;
-    if (count <= this.maxTriangles) {
-      root.leaf = true;
+    if (root.leaf) {
       this._numLeafTris += count;
+      this.largestLeaf = Math.max(count, this.largestLeaf);
       return root;
     }
+    
     let splitIndices = this._constructCachedIndexList(indices, root.splitAxis, root.splitIndex);
     root.left = this.buildTree(splitIndices.left, depth + 1);
     root.right = this.buildTree(splitIndices.right, depth + 1);
@@ -33,34 +36,21 @@ export class BVH {
     return root;
   }
 
-  buildTree2(indices) {
-    const now = performance.now();
-    let root = new Node(this.triangles, indices);
-    let q = new Queue();
-    let splitIndices = this._constructCachedIndexList(indices, root.splitAxis, root.splitIndex);
-    q.enqueue({ indices: splitIndices.left, depth: this.depth + 1, parent: root, left: true });
-    q.enqueue({ indices: splitIndices.right, depth: this.depth + 1, parent: root, left: false });
-    while (q.hasElements()) {
-      const args = q.dequeue();
-      this.depth = Math.max(this.depth, args.depth);
-      const node = new Node(this.triangles, args.indices);
-      if (args.left) {
-        args.parent.left = node;
-      } else {
-        args.parent.right = node;
-      }
-      const count = node.indices[node.splitAxis || 0].length;
-      if (count <= this.maxTriangles) {
-        node.leaf = true;
-        this._numLeafTris += count;
-      } else {
-        let splitIndices = this._constructCachedIndexList(args.indices, node.splitAxis, node.splitIndex);
-        q.enqueue({ indices: splitIndices.left, depth: args.depth + 1, parent: node, left: true });
-        q.enqueue({ indices: splitIndices.right, depth: args.depth + 1, parent: node, left: false });
-      }
+  splitTriangles(root, leftIndices, rightIndices) {
+    let rightBox = new BoundingBox();
+    let leftBox = new BoundingBox();
+    for (const idx of rightIndices) {
+      rightBox.addTriangle(this.triangles[idx]);
     }
-    console.log("BUILD 2:", (performance.now() - now) / 1000);
-    return root;
+    for (const idx of leftIndices) {
+      leftBox.addTriangle(this.triangles[idx]);
+    }
+    let overlap = new BoundingBox();
+    if (leftBox.max[root.splitAxis] > rightBox.min[root.splitAxis]) {
+      overlap.max = leftBox.max;
+      overlap.min = rightBox.min;
+
+    }
   }
 
   // BFS is slightly slower but generates a tiny bit (2-3%) faster BVH. Guessing because it preserves locality.
@@ -105,10 +95,10 @@ export class BVH {
     let rightIndices = [null, null, null];
     rightIndices[splitAxis] = indices[splitAxis].slice(splitIndex, indices[splitAxis].length);
     let setLeft = new Set(leftIndices[splitAxis]);
-    let remainingAxes = [0, 1, 2].filter((e) => { return e !== splitAxis });
-
-    for (let i = 0; i < remainingAxes.length; i++) {
-      let axis = remainingAxes[i];
+    for (let axis = 0; axis < 3; axis++) {
+      if (axis === splitAxis) {
+        continue;
+      }
       leftIndices[axis] = Array(leftIndices[splitAxis].length)
       rightIndices[axis] = Array(rightIndices[splitAxis].length)
       let li = 0, ri = 0;
@@ -199,7 +189,11 @@ export class Node {
     this.leaf = false;
     this.left = null;
     this.right = null;
-    this.setSplit()
+    this.traversalCost = 0.250;
+  }
+
+  getleafSize() {
+    return this.indices[0].length;
   }
 
   getTriangles() {
@@ -235,13 +229,18 @@ export class Node {
       for (let i = 0; i < idxCache.length; i++) {
         let sAf = surfacesFront[i];
         let sAb = surfacesBack[surfacesBack.length - 1 - i];
-        let cost = 15 + (sAf / parentSurfaceArea) * 20 * (i + 1) + (sAb / parentSurfaceArea) * 20 * (idxCache.length - 1 - i);
+        let cost = this.traversalCost +
+          (sAf / parentSurfaceArea) * (i + 1) +
+          (sAb / parentSurfaceArea) * (idxCache.length - 1 - i);
         if (cost < bestCost) {
           bestCost = cost;
           this.splitIndex = i + 1;
           this.splitAxis = axis;
         }
       }
+    }
+    if (bestCost > this.indices[0].length) {
+      this.leaf = true;
     }
   }
 }

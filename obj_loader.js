@@ -161,6 +161,10 @@ export async function parseMesh(objText, transforms, worldTransforms, basePath) 
     groups[currentGroup].triangles.push(tri);
   }
 
+  function splitTriangle(tri) {
+
+  }
+
   for (let i = 0; i < lines.length; i++) {
     let array = lines[i].trim().split(/[ ]+/);
     let vals = array.slice(1, array.length);

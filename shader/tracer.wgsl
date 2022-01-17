@@ -1,6 +1,5 @@
 let EPSILON: f32 = 0.0000001;
 let MAX_T: f32 = 100000.0;
-let LEAF_SIZE: i32 = 4;
 let M_PI: f32 = 3.141592653589793;
 let M_TAU: f32 = 6.283185307179586;
 let INV_PI: f32 = 0.3183098861837907;
@@ -168,15 +167,17 @@ fn rayTriangleIntersect(ray: Ray, tri: Triangle, bary: ptr<function, vec3<f32>>)
 }
 
 fn processLeaf(leaf: Node, ray: Ray, result: ptr<function, Hit>){
+  let leafSize = leaf.triangles >> 24u;
+  let baseIdx = leaf.triangles & 0x00ffffff;
   var i: i32 = 0;
   loop {
-    if (i >= LEAF_SIZE) { break;}
+    if (i >= leafSize) { break;}
     var bary = vec3<f32>();
-    let tri: Triangle = triangles.triangles[leaf.triangles + i];
+    let tri: Triangle = triangles.triangles[baseIdx + i];
     let res: f32 = rayTriangleIntersect(ray, tri, &bary);
     (*result).tests = (*result).tests + 1f;
     if(res < (*result).t){
-      (*result).index = leaf.triangles + i;
+      (*result).index = baseIdx + i;
       (*result).t = res;
       (*result).bary = bary;
     }
