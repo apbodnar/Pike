@@ -53,7 +53,7 @@ export class BVH {
     }
   }
 
-  // BFS is slightly slower but generates a tiny bit (2-3%) faster BVH. Guessing because it preserves locality.
+  // BFS is slightly slower but generates a tiny bit (2-3%) faster BVH. Guessing because it preserves sibling locality.
   serializeTree() {
     let nodes = [];
     let root = { node: this.root, parent: -1 };

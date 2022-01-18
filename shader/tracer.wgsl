@@ -166,6 +166,24 @@ fn rayTriangleIntersect(ray: Ray, tri: Triangle, bary: ptr<function, vec3<f32>>)
   return select(MAX_T, dist, dist > EPSILON);
 }
 
+// fn tightRayTriangleIntersect(ray: Ray, tri: Triangle, bary: ptr<function, vec3<f32>>) -> f32 {
+//   var kz = 0;
+//   let x = abs(ray.dir.x);
+//   let y = abs(ray.dir.y);
+//   let z = abs(ray.dir.z);
+//   var maxAxis = 0;
+//   maxAxis = select(maxAxis, 0, abs(x) > ray.dir[maxAxis]);
+//   maxAxis = select(maxAxis, 1, abs(y) > ray.dir[maxAxis]);
+//   maxAxis = select(maxAxis, 2, abs(z) > ray.dir[maxAxis]);
+//   let kx = (kz + 1) % 3;
+//   let ky = (kx + 1) % 3;
+//   if (ray.dir[kz] < 0.0f) {
+//     let temp = kx;
+//     kx = ky;
+//     ky = temp;
+//   }
+// }
+
 fn processLeaf(leaf: Node, ray: Ray, result: ptr<function, Hit>){
   let leafSize = leaf.triangles >> 24u;
   let baseIdx = leaf.triangles & 0x00ffffff;

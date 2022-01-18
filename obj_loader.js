@@ -4,17 +4,16 @@ import { ParseMaterials } from './mtl_loader.js'
 import * as Utility from './utility.js'
 
 export async function parseMesh(objText, transforms, worldTransforms, basePath) {
-  let lines = objText.split('\n');
-  let vertices = [];
-  let vertNormals = [];
-  let meshNormals = [];
-  let uvs = [];
-  let currentGroup = "FSPT_DEFAULT_GROUP";
-  let groups = {};
-  let materials = {};
-  let skips = new Set(transforms.skips);
+  const lines = objText.split('\n');
+  const vertices = [];
+  const normals = [];
+  //const vertNormals = [];
+  const uvs = [];
+  let currentGroup = "PIKE_DEFAULT_GROUP";
+  const groups = {};
+  const materials = {};
+  const skips = new Set(transforms.skips);
   let urls = null;
-  let bounds = { min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
 
   function applyRotations(vert) {
     transforms.rotate.forEach((r) => { vert = Vec3.rotateArbitrary(vert, r.axis, r.angle) });
@@ -51,10 +50,10 @@ export async function parseMesh(objText, transforms, worldTransforms, basePath) 
     return Vec3.scale(total, 1.0 / normArray.length);
   }
 
-  function parseFace(quad_indices) {
+  function parseFace(indices) {
     let triList = [];
-    for (let i = 0; i < quad_indices.length - 2; i++) {
-      triList.push([quad_indices[0], quad_indices[i + 1], quad_indices[i + 2]])
+    for (let i = 0; i < indices.length - 2; i++) {
+      triList.push([indices[0], indices[i + 1], indices[i + 2]])
     }
     triList.forEach(parseTriangle);
   }
@@ -110,59 +109,48 @@ export async function parseMesh(objText, transforms, worldTransforms, basePath) 
           case 1:
             break;
           case 2:
-            indices[i][j] = indices[i][j] < 1 ? meshNormals.length + indices[i][j] + 1 : indices[i][j];
+            indices[i][j] = indices[i][j] < 1 ? normals.length + indices[i][j] + 1 : indices[i][j];
         }
       }
     }
     let tri = new Triangle(
       [
-        applyVectorTransforms(vertices[indices[0][0] - 1]),
-        applyVectorTransforms(vertices[indices[1][0] - 1]),
-        applyVectorTransforms(vertices[indices[2][0] - 1])
+        vertices[indices[0][0] - 1],
+        vertices[indices[1][0] - 1],
+        vertices[indices[2][0] - 1],
       ],
       [
         indices[0][0] - 1,
         indices[1][0] - 1,
-        indices[2][0] - 1
+        indices[2][0] - 1,
       ],
       [
-        uvs[(indices[0][1] - 1)],
-        uvs[(indices[1][1] - 1)],
-        uvs[(indices[2][1] - 1)]
+        uvs[indices[0][1] - 1],
+        uvs[indices[1][1] - 1],
+        uvs[indices[2][1] - 1],
       ],
       transforms
     );
 
-    for (let i = 0; i < tri.verts.length; i++) {
-      for (let j = 0; j < tri.verts[i].length; j++) {
-        bounds.max = Vec3.max(bounds.max, tri.verts[i]);
-        bounds.min = Vec3.min(bounds.min, tri.verts[i]);
-      }
-    }
-
     // Use mesh normals or calculate them
     if (transforms.normals === "mesh") {
-      tri.setNormals([
-        Vec3.normalize(applyVectorTransforms(meshNormals[indices[0][2] - 1], true)),
-        Vec3.normalize(applyVectorTransforms(meshNormals[indices[1][2] - 1], true)),
-        Vec3.normalize(applyVectorTransforms(meshNormals[indices[2][2] - 1], true))
-      ]);
+      tri.normals = [
+        Vec3.normalize(normals[indices[0][2] - 1], true),
+        Vec3.normalize(normals[indices[1][2] - 1], true),
+        Vec3.normalize(normals[indices[2][2] - 1], true),
+      ];
     } else {
       let normal = getNormal(tri);
       tri.normals = [normal, normal, normal];
-      for (let j = 0; j < indices.length; j++) {
-        if (!vertNormals[indices[j][0] - 1]) {
-          vertNormals[indices[j][0] - 1] = [];
-        }
-        vertNormals[indices[j][0] - 1].push(normal);
-      }
+      // for (let j = 0; j < indices.length; j++) {
+      //   if (!vertNormals[indices[j][0] - 1]) {
+      //     vertNormals[indices[j][0] - 1] = [];
+      //   }
+      //   vertNormals[indices[j][0] - 1].push(normal);
+      // }
     }
 
     groups[currentGroup].triangles.push(tri);
-  }
-
-  function splitTriangle(tri) {
-
   }
 
   for (let i = 0; i < lines.length; i++) {
@@ -170,7 +158,8 @@ export async function parseMesh(objText, transforms, worldTransforms, basePath) 
     let vals = array.slice(1, array.length);
 
     if (array[0] === 'v') {
-      vertices.push(vals.splice(0, 3).map(parseFloat))
+      const vertex = applyVectorTransforms(vals.splice(0, 3).map(parseFloat));
+      vertices.push(vertex);
     } else if (array[0] === 'f' && !skips.has(currentGroup)) {
       if (!groups[currentGroup]) {
         groups[currentGroup] = { triangles: [], material: materials[currentGroup] || {} };
@@ -183,7 +172,8 @@ export async function parseMesh(objText, transforms, worldTransforms, basePath) 
       let tuv = uv.splice(0, 2);
       uvs.push(tuv);
     } else if (array[0] === 'vn') {
-      meshNormals.push(vals.map(parseFloat))
+      const normal = applyVectorTransforms(vals.map(parseFloat), true);
+      normals.push(normal)
     } else if (array[0] === 'usemtl') {
       currentGroup = array.splice(1, Infinity).join(' ');
     } else if (array[0] === 'mtllib') {
@@ -195,16 +185,16 @@ export async function parseMesh(objText, transforms, worldTransforms, basePath) 
     }
   }
 
-  Object.entries(groups).forEach((pair) => {
-    let group = pair[1];
-    if (transforms.normals === "smooth") {
-      for (let i = 0; i < group.triangles.length; i++) {
-        for (let j = 0; j < 3; j++) {
-          group.triangles[i].normals[j] = averageNormals(vertNormals[group.triangles[i].indices[j]]);
-        }
-      }
-    }
-  });
+  // Object.entries(groups).forEach((pair) => {
+  //   let group = pair[1];
+  //   if (transforms.normals === "smooth") {
+  //     for (let i = 0; i < group.triangles.length; i++) {
+  //       for (let j = 0; j < 3; j++) {
+  //         group.triangles[i].normals[j] = averageNormals(vertNormals[group.triangles[i].indices[j]]);
+  //       }
+  //     }
+  //   }
+  // });
 
   Object.entries(groups).forEach((pair) => {
     let key = pair[0];
@@ -214,6 +204,5 @@ export async function parseMesh(objText, transforms, worldTransforms, basePath) 
       calcTangents(tri);
     });
   });
-
-  return new Promise(resolve => { resolve({ groups: groups, urls: urls, bounds: bounds }) });
+  return Promise.resolve({ groups: groups, urls: urls });
 }
