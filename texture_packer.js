@@ -24,7 +24,7 @@ export class TexturePacker {
 
   addColor(color) {
     let key = color.join(' ');
-    if (this.imageKeys[key]) {
+    if (this.imageKeys[key] !== undefined) {
       return this.imageKeys[key]
     } else {
       this.imageSet.push(color);

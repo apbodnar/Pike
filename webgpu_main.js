@@ -128,12 +128,13 @@ async function PathTracer(scenePath, resolution) {
     let scene = JSON.parse(assets[scenePath]);
     let geometry = [];
     let materials = [];
+    let attributes = [];
     let props = mergeSceneProps(scene);
     for (let i = 0; i < props.length; i++) {
       let prop = props[i];
       let basePath = prop.path.split('/').slice(0, -1).join('/');
       console.log("Parsing:", prop.path);
-      let parsed = await ObjLoader.parseMesh(assets[prop.path], prop, scene.worldTransforms, basePath);
+      let parsed = await ObjLoader.parseMesh(assets[prop.path], prop, scene.worldTransforms, basePath, attributes);
       let groups = parsed.groups;
       if (parsed.urls && parsed.urls.size > 0) {
         console.log("Downloading: \n", Array.from(parsed.urls).join('\n'));
@@ -149,7 +150,7 @@ async function PathTracer(scenePath, resolution) {
         materials.push(material);
       });
     }
-
+    debugger;
     let time = new Date().getTime();
     console.log("Building BVH:", geometry.length, "triangles");
     time = new Date().getTime();

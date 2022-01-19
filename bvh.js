@@ -246,13 +246,40 @@ export class Node {
 }
 
 export class Triangle {
-  constructor(verts, uvs) {
-    this.verts = verts;
-    this.uvs = uvs;
-    this.tangents = [];
-    this.bitangents = [];
-    this.normals = null;
+  constructor(indices, attributes) {
+    this.indices = indices;
+    this.attributes = attributes;
     this.boundingBox = new BoundingBox().addTriangle(this);
+  }
+
+  get verts() {
+    return this.indices.map((i) => {
+      return this.attributes[i].position;
+    })
+  }
+
+  get uvs() {
+    return this.indices.map((i) => {
+      return this.attributes[i].uv;
+    })
+  }
+
+  get normals() {
+    return this.indices.map((i) => {
+      return this.attributes[i].normal;
+    })
+  }
+
+  get tangents() {
+    return this.indices.map((i) => {
+      return this.attributes[i].tangent;
+    })
+  }
+
+  get bitangents() {
+    return this.indices.map((i) => {
+      return this.attributes[i].bitangent;
+    })
   }
 }
 
