@@ -184,25 +184,6 @@ export async function parseMesh(objText, transforms, worldTransforms, basePath, 
       attributes
     );
 
-    // let n;
-    // Use mesh normals or calculate them
-    // if (transforms.normals === "mesh") {
-    //   n = [
-    //     Vec3.normalize(normals[indices[0][2]]),
-    //     Vec3.normalize(normals[indices[1][2]]),
-    //     Vec3.normalize(normals[indices[2][2]]),
-    //   ];
-    // } else {
-    //   const normal = getNormal(tri);
-    //   n = [normal, normal, normal];
-    // }
-
-    // for (let i=0; i < attributeIndices.length; i++) {
-    //   const attrIdx = attributeIndices[i];
-    //   const attribute = attributes[attrIdx];
-    //   attribute.normal.push(n[i % 3]);
-    // }
-
     let [tangents, bitangents] = calcTangents(tri, guess);
 
     for (let i = 0; i < attributeIndices.length; i++) {
@@ -249,7 +230,6 @@ export async function parseMesh(objText, transforms, worldTransforms, basePath, 
   }
 
   faces.forEach(parseTriangle);
-  //debugger;
   attributes.slice(start).forEach(a => {
     a.tangent = averageVectors(a.tangent);
     a.bitangent = averageVectors(a.bitangent);
@@ -266,7 +246,6 @@ export async function parseMesh(objText, transforms, worldTransforms, basePath, 
   //   }
   // });
 
-  //debugger;
   Object.entries(groups).forEach((pair) => {
     let key = pair[0];
     let group = pair[1];

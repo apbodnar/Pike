@@ -12,6 +12,8 @@ import {
   RenderStateStruct,
   MaterialIndexStruct,
   PostprocessParamsStruct,
+  VertexIndexStruct,
+  VertexPositionStruct,
 } from './webgpu_utils.js';
 
 async function PathTracer(scenePath, resolution) {
@@ -150,7 +152,6 @@ async function PathTracer(scenePath, resolution) {
         materials.push(material);
       });
     }
-    debugger;
     let time = new Date().getTime();
     console.log("Building BVH:", geometry.length, "triangles");
     time = new Date().getTime();
@@ -159,9 +160,10 @@ async function PathTracer(scenePath, resolution) {
     time = new Date().getTime();
     let bvhArray = bvh.serializeTree();
     console.log("BVH serialized in", (new Date().getTime() - time) / 1000.0, " seconds");
-    const attributeBuffer = new WGSLPackedStructArray(VertexAttributeStruct, bvh.numLeafTris * 3);
+    const attributeBuffer = new WGSLPackedStructArray(VertexAttributeStruct, attributes.length);
     const bvhBuffer = new WGSLPackedStructArray(BVHNodeStruct, bvhArray.length);
-    const trianglesBuffer = new WGSLPackedStructArray(TriangleStruct, bvh.numLeafTris * 3);
+    const trianglesBuffer = new WGSLPackedStructArray(VertexIndexStruct, bvh.numLeafTris * 3);
+    const positionBuffer = new WGSLPackedStructArray(VertexPositionStruct, attributes.length);
     const materialsBuffer = new WGSLPackedStructArray(MaterialIndexStruct, materials.length);
     materials.forEach((mat) => {
       materialsBuffer.push(new MaterialIndexStruct({
@@ -187,23 +189,28 @@ async function PathTracer(scenePath, resolution) {
         let tris = node.getTriangles();
         triIndex += tris.length;
         for (let j = 0; j < tris.length; j++) {
-          trianglesBuffer.push(new TriangleStruct({
-            v0: tris[j].verts[0],
-            v1: tris[j].verts[1],
-            v2: tris[j].verts[2],
+          trianglesBuffer.push(new VertexIndexStruct({
+            i0: tris[j].indices[0],
+            i1: tris[j].indices[1],
+            i2: tris[j].indices[2],
             matId: tris[j].material,
           }));
-          for (let k = 0; k < 3; k++) {
-            attributeBuffer.push(new VertexAttributeStruct({
-              normal: tris[j].normals[k],
-              tangent: tris[j].tangents[k],
-              biTangent: tris[j].bitangents[k],
-              uv: tris[j].uvs[k],
-            }));
-          }
         }
       }
     }
+
+    for (let attribute of attributes) {
+      attributeBuffer.push(new VertexAttributeStruct({
+        normal: attribute.normal,
+        tangent: attribute.tangent,
+        bitangent: attribute.bitangent,
+        uv: attribute.uv,
+      }));
+      positionBuffer.push(new VertexPositionStruct({
+        pos: attribute.position,
+      }));
+    }
+
     const atlasTexture = createAtlasTetxure();
     const envGenerator = new EnvironmentGenerator(assets[scene.environment]);
     const envTexture = await envGenerator.createLuminanceMap(device);
@@ -232,41 +239,48 @@ async function PathTracer(scenePath, resolution) {
         {
           binding: 2,
           resource: {
+            buffer: positionBuffer.createWGPUBuffer(device, GPUBufferUsage.STORAGE),
+            size: positionBuffer.size,
+          },
+        },
+        {
+          binding: 3,
+          resource: {
             buffer: attributeBuffer.createWGPUBuffer(device, GPUBufferUsage.STORAGE),
             size: attributeBuffer.size,
           },
         },
         {
-          binding: 3,
+          binding: 4,
           resource: {
             buffer: materialsBuffer.createWGPUBuffer(device, GPUBufferUsage.STORAGE),
             size: materialsBuffer.size,
           },
         },
         {
-          binding: 4,
+          binding: 5,
           resource: atlasTexture.createView({ dimension: '2d-array' }),
         },
         {
-          binding: 5,
+          binding: 6,
           resource: envTexture.createView(),
         },
         {
-          binding: 6,
+          binding: 7,
           resource: {
             buffer: luminanceCoordBuffer.createWGPUBuffer(device, GPUBufferUsage.STORAGE),
             size: luminanceCoordBuffer.size,
           },
         },
         {
-          binding: 7,
+          binding: 8,
           resource: {
             buffer: luminanceBinBuffer.createWGPUBuffer(device, GPUBufferUsage.STORAGE),
             size: luminanceBinBuffer.size,
           },
         },
         {
-          binding: 8,
+          binding: 9,
           resource: pdfTexture.createView(),
         },
       ],

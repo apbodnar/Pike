@@ -189,9 +189,10 @@ export class VertexPositionStruct extends WGSLPackedStruct {
 export class VertexIndexStruct extends WGSLPackedStruct {
   static get desc() {
     return [
-      { name: "i", type: Int32Array, count: 1 },
-      { name: "j", type: Int32Array, count: 1 },
-      { name: "k", type: Int32Array, count: 1 },
+      { name: "i0", type: Int32Array, count: 1 },
+      { name: "i1", type: Int32Array, count: 1 },
+      { name: "i2", type: Int32Array, count: 1 },
+      { name: "matId", type: Int32Array, count: 1 },
     ];
   }
 }
@@ -200,7 +201,7 @@ export class VertexAttributeStruct extends WGSLPackedStruct {
   static get desc() {
     return [
       { name: "tangent", type: Float32Array, count: 3 },
-      { name: "biTangent", type: Float32Array, count: 3 },
+      { name: "bitangent", type: Float32Array, count: 3 },
       { name: "normal", type: Float32Array, count: 3 },
       { name: "uv", type: Float32Array, count: 2 },
     ];

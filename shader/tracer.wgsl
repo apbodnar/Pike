@@ -12,10 +12,14 @@ var<private> stack: array<i32, 32>;
 
 // Keep vertex positions separate from other "attributes" to maximize locality during traversal.
 struct Triangle {
-  v1: vec3<f32>;
-  v2: vec3<f32>;
-  v3: vec3<f32>;
-  [[align(16)]] matId: i32;
+  i1: i32;
+  i2: i32;
+  i3: i32;
+  matId: i32;
+};
+
+struct VertexPositions {
+  pos: [[stride(16)]] array<vec3<f32>>;
 };
 
 struct VertexAttribute {
@@ -26,7 +30,7 @@ struct VertexAttribute {
 };
 
 struct VertexAttributes {
-  attributes: [[stride(192)]] array<array<VertexAttribute, 3>>;
+  attributes: [[stride(64)]] array<VertexAttribute>;
 };
 
 struct MaterialIndex {
@@ -54,7 +58,7 @@ struct BVH {
 };
 
 struct Triangles {
-  triangles: [[stride(64)]] array<Triangle>;
+  triangles: [[stride(16)]] array<Triangle>;
 };
 
 struct Ray {
@@ -99,13 +103,14 @@ struct Sample {
 
 [[group(1), binding(0)]] var<storage, read> bvh: BVH;
 [[group(1), binding(1)]] var<storage, read> triangles: Triangles;
-[[group(1), binding(2)]] var<storage, read> attrs: VertexAttributes;
-[[group(1), binding(3)]] var<storage, read> materials: MaterialIndices;
-[[group(1), binding(4)]] var atlasTex: texture_2d_array<f32>;
-[[group(1), binding(5)]] var envTex: texture_2d<f32>;
-[[group(1), binding(6)]] var<storage, read> envCoords: LuminanceCoords;
-[[group(1), binding(7)]] var<storage, read> envLuminance: LuminanceBins;
-[[group(1), binding(8)]] var pdfTex: texture_2d<f32>;
+[[group(1), binding(2)]] var<storage, read> vertices: VertexPositions;
+[[group(1), binding(3)]] var<storage, read> attrs: VertexAttributes;
+[[group(1), binding(4)]] var<storage, read> materials: MaterialIndices;
+[[group(1), binding(5)]] var atlasTex: texture_2d_array<f32>;
+[[group(1), binding(6)]] var envTex: texture_2d<f32>;
+[[group(1), binding(7)]] var<storage, read> envCoords: LuminanceCoords;
+[[group(1), binding(8)]] var<storage, read> envLuminance: LuminanceBins;
+[[group(1), binding(9)]] var pdfTex: texture_2d<f32>;
 
 [[group(2), binding(0)]] var<uniform> state: State;
 [[group(2), binding(1)]] var atlasSampler: sampler;
@@ -149,13 +154,13 @@ fn rayBoxIntersect(node: Node, ray: Ray) -> f32 {
 }
 
 fn rayTriangleIntersect(ray: Ray, tri: Triangle, bary: ptr<function, vec3<f32>>) -> f32 {
-  let e1: vec3<f32> = tri.v2 - tri.v1;
-  let e2: vec3<f32> = tri.v3 - tri.v1;
+  let e1: vec3<f32> = vertices.pos[tri.i2] - vertices.pos[tri.i1];
+  let e2: vec3<f32> = vertices.pos[tri.i3] - vertices.pos[tri.i1];
   let p: vec3<f32> = cross(ray.dir, e2);
   let det: f32 = dot(e1, p);
   if(abs(det) < EPSILON){return MAX_T;}
   let invDet = 1f / det;
-  let t: vec3<f32> = ray.origin - tri.v1;
+  let t: vec3<f32> = ray.origin - vertices.pos[tri.i1];
   let u: f32 = dot(t, p) * invDet;
   if(u < 0f || u > 1f){return MAX_T;}
   let q: vec3<f32> = cross(t, e1);
@@ -321,7 +326,7 @@ fn specularPdf(wo: vec3<f32>, m: vec3<f32>, au: f32, av: f32) -> f32 {
 
 fn sampleSpecular(wo: vec3<f32>,  m: vec3<f32>, au: f32, av: f32) -> Sample {
   let wi = reflect(-wo, m);
-  let pdf = specularPdf(wo, m, au, av);
+  let pdf = max(specularPdf(wo, m, au, av), EPSILON);
   return Sample(wi, pdf);
 }
 
@@ -355,13 +360,13 @@ fn createPrimaryRay(gid: vec2<f32>, dims: vec2<f32>) -> Ray {
  return Ray(state.eye.origin, normalize(screen - state.eye.origin));
 }
 
-fn interpolateVertexAttribute(i: i32, bary: vec3<f32>) -> VertexAttribute {
-  var attr: array<VertexAttribute, 3> = attrs.attributes[i];
+fn interpolateVertexAttribute(tri: Triangle, bary: vec3<f32>) -> VertexAttribute {
+  //var attr: array<VertexAttribute, 3> = attrs.attributes[i];
   return VertexAttribute(
-    mat3x3<f32>(attr[0].tangent, attr[1].tangent, attr[2].tangent) * bary,
-    mat3x3<f32>(attr[0].bitangent, attr[1].bitangent, attr[2].bitangent) * bary,
-    mat3x3<f32>(attr[0].normal, attr[1].normal, attr[2].normal) * bary,
-    mat3x2<f32>(attr[0].uv, attr[1].uv, attr[2].uv) * bary,
+    mat3x3<f32>(attrs.attributes[tri.i1].tangent, attrs.attributes[tri.i2].tangent, attrs.attributes[tri.i3].tangent) * bary,
+    mat3x3<f32>(attrs.attributes[tri.i1].bitangent, attrs.attributes[tri.i2].bitangent, attrs.attributes[tri.i3].bitangent) * bary,
+    mat3x3<f32>(attrs.attributes[tri.i1].normal, attrs.attributes[tri.i2].normal, attrs.attributes[tri.i3].normal) * bary,
+    mat3x2<f32>(attrs.attributes[tri.i1].uv, attrs.attributes[tri.i2].uv, attrs.attributes[tri.i3].uv) * bary,
   );
 }
 
@@ -437,7 +442,7 @@ fn main(
       break;
     }
     let tri = triangles.triangles[hit.index];
-    var attr = interpolateVertexAttribute(hit.index, hit.bary);
+    var attr = interpolateVertexAttribute(tri, hit.bary);
     let matIdx = materials.indices[tri.matId];
     let mapNormal = (textureSampleLevel(atlasTex, atlasSampler, attr.uv, matIdx.normMap, 0f).xyz - vec3<f32>(0.5, 0.5, 0.0)) * vec3<f32>(2.0, 2.0, 1.0);
     let normal = normalize(mat3x3<f32>(attr.tangent, attr.bitangent, attr.normal) * mapNormal);
