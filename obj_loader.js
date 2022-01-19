@@ -3,15 +3,47 @@ import { Vec3 } from './vector.js'
 import { ParseMaterials } from './mtl_loader.js'
 import * as Utility from './utility.js'
 
+class VertexDatabase {
+  constructor() {
+    this.nextIdx = 0;
+    this.db = {};
+  }
+
+  getAttributeIndex(posIdx, uvIdx, normalIdx) {
+    if (!this.db[posIdx]) {
+      this.db[posIdx] = {};
+    }
+    if (!this.db[posIdx][uvIdx]) {
+      this.db[posIdx][uvIdx] = {}
+    }
+    let idx = this.db[posIdx][uvIdx][normalIdx];
+    if (idx) {
+      return [idx, false];
+    } else {
+      this.db[posIdx][uvIdx][normalIdx] = this.nextIdx++;
+      return [this.db[posIdx][uvIdx][normalIdx], true];
+    }
+  }
+
+  // dumpDB() {
+  //   for (const [posIdx, uvMap] of Object.entries()) {
+
+  //   }
+  // }
+}
+
 export async function parseMesh(objText, transforms, worldTransforms, basePath) {
   const lines = objText.split('\n');
   const vertices = [];
   const normals = [];
   //const vertNormals = [];
+  const vertTangents = [];
+  const vertBitangents = [];
   const uvs = [];
   let currentGroup = "PIKE_DEFAULT_GROUP";
   const groups = {};
-  const materials = {};
+  let materials = {};
+  const vertDb = new VertexDatabase();
   const skips = new Set(transforms.skips);
   let urls = null;
 
@@ -59,6 +91,9 @@ export async function parseMesh(objText, transforms, worldTransforms, basePath) 
   }
 
   function calcTangents(triangle) {
+    const tangents = [];
+    const bitangents = [];
+
     if (!triangle.uvs[0]) {
       triangle.verts.forEach((vert, i) => {
         let dir = Vec3.normalize(vert);
@@ -77,12 +112,21 @@ export async function parseMesh(objText, transforms, worldTransforms, basePath) 
     let deltaPos0 = Vec3.sub(triangle.verts[1], triangle.verts[0]);
     let deltaPos1 = Vec3.sub(triangle.verts[2], triangle.verts[0]);
 
+    // if (triangle.uvs[0] === undefined || triangle.uvs[1] === undefined || triangle.uvs[2] == undefined) {
+    //   const tangent = Vec3.normalize(Vec3.cross([0, 1, 0], triangle.normals[0]));
+    //   const bitangent = Vec3.normalize(Vec3.cross(triangle.normals[0], tangent));
+    //   tangents.push(tangent, tangent, tangent);
+    //   bitangents.push(bitangent, bitangent, bitangent);
+    //   return [tangents, bitangents];
+    // }
+
     let deltaUv0 = Vec3.sub(triangle.uvs[1], triangle.uvs[0]);
     let deltaUv1 = Vec3.sub(triangle.uvs[2], triangle.uvs[0]);
 
     let r = 1.0 / ((deltaUv0[0] * deltaUv1[1]) - (deltaUv0[1] * deltaUv1[0]));
     let preTangent = Vec3.normalize(Vec3.scale(Vec3.sub(Vec3.scale(deltaPos0, deltaUv1[1]), Vec3.scale(deltaPos1, deltaUv0[1])), r));
     //let bt = Vec3.normalize(Vec3.scale(Vec3.sub(Vec3.scale(deltaPos1, deltaUv0[0]), Vec3.scale(deltaPos0, deltaUv1[0])), r));
+
     for (let i = 0; i < 3; i++) {
       let normal = triangle.normals[i];
       let preBitangent = Vec3.normalize(Vec3.cross(normal, preTangent));
@@ -91,63 +135,78 @@ export async function parseMesh(objText, transforms, worldTransforms, basePath) 
 
       if (isNaN(Vec3.dot(tangent, bitangent))) {
         let t = Vec3.cross(triangle.normals[i], [0, 1, 0]);
-        triangle.tangents[i] = t;
-        triangle.bitangents[i] = Vec3.cross(t, triangle.normals[i]);
+        tangents.push(t);
+        bitangents.push(Vec3.cross(t, triangle.normals[i]));
       }
-      triangle.tangents.push(tangent);
-      triangle.bitangents.push(bitangent);
+      tangents.push(tangent);
+      bitangents.push(bitangent);
     }
+    return [tangents, bitangents];
   }
 
   function parseTriangle(indices) {
-    for (let i = 0; i < indices.length; i++) {
-      for (let j = 0; j < indices[i].length; j++) {
-        switch (j) {
-          case 0:
-            indices[i][j] = indices[i][j] < 1 ? vertices.length + indices[i][j] + 1 : indices[i][j];
-            break;
-          case 1:
-            break;
-          case 2:
-            indices[i][j] = indices[i][j] < 1 ? normals.length + indices[i][j] + 1 : indices[i][j];
-        }
-      }
+    // for (let i = 0; i < indices.length; i++) {
+    //   for (let j = 0; j < indices[i].length; j++) {
+    //     switch (j) {
+    //       case 0:
+    //         indices[i][j] = indices[i][j] < 1 ? vertices.length + indices[i][j] + 1 : indices[i][j];
+    //         break;
+    //       case 1:
+    //         break;
+    //       case 2:
+    //         indices[i][j] = indices[i][j] < 1 ? normals.length + indices[i][j] + 1 : indices[i][j];
+    //     }
+    //   }
+    // }
+    for (let i = 0; i < 3; i++) {
+      const index = indices[i];
+      const posIdx = index[0];
+      const uvIdx = index[1];
+      const normIdx = index[2];
+      //console.log(posIdx, uvIdx, normIdx);
+      //console.log(vertDb.getAttributeIndex(posIdx, uvIdx, normIdx));
     }
+
+
+
     let tri = new Triangle(
       [
-        vertices[indices[0][0] - 1],
-        vertices[indices[1][0] - 1],
-        vertices[indices[2][0] - 1],
+        vertices[indices[0][0]],
+        vertices[indices[1][0]],
+        vertices[indices[2][0]],
       ],
       [
-        indices[0][0] - 1,
-        indices[1][0] - 1,
-        indices[2][0] - 1,
+        uvs[indices[0][1]],
+        uvs[indices[1][1]],
+        uvs[indices[2][1]],
       ],
-      [
-        uvs[indices[0][1] - 1],
-        uvs[indices[1][1] - 1],
-        uvs[indices[2][1] - 1],
-      ],
-      transforms
     );
 
     // Use mesh normals or calculate them
     if (transforms.normals === "mesh") {
       tri.normals = [
-        Vec3.normalize(normals[indices[0][2] - 1], true),
-        Vec3.normalize(normals[indices[1][2] - 1], true),
-        Vec3.normalize(normals[indices[2][2] - 1], true),
+        Vec3.normalize(normals[indices[0][2]]),
+        Vec3.normalize(normals[indices[1][2]]),
+        Vec3.normalize(normals[indices[2][2]]),
       ];
     } else {
-      let normal = getNormal(tri);
+      const normal = getNormal(tri);
       tri.normals = [normal, normal, normal];
-      // for (let j = 0; j < indices.length; j++) {
-      //   if (!vertNormals[indices[j][0] - 1]) {
-      //     vertNormals[indices[j][0] - 1] = [];
-      //   }
-      //   vertNormals[indices[j][0] - 1].push(normal);
-      // }
+    }
+
+    let [tangents, bitangents] = calcTangents(tri);
+    tri.tangents = tangents;
+    tri.bitangents = bitangents
+
+    for (let j = 0; j < indices.length; j++) {
+      if (!vertTangents[indices[j][0]]) {
+        vertTangents[indices[j][0]] = [];
+      }
+      vertTangents[indices[j][0]].push(tangents[j % 3]);
+      if (!vertBitangents[indices[j][0]]) {
+        vertBitangents[indices[j][0]] = [];
+      }
+      vertBitangents[indices[j][0]].push(bitangents[j % 3]);
     }
 
     groups[currentGroup].triangles.push(tri);
@@ -164,7 +223,8 @@ export async function parseMesh(objText, transforms, worldTransforms, basePath) 
       if (!groups[currentGroup]) {
         groups[currentGroup] = { triangles: [], material: materials[currentGroup] || {} };
       }
-      vals = vals.map(function (s) { return s.split('/').map(parseFloat) });
+      // OBJ starts counting at 1
+      vals = vals.map(function (s) { return s.split('/').map((e) => { return parseFloat(e) - 1 }) });
       parseFace(vals);
     } else if (array[0] === 'vt') {
       let uv = vals.map(function (coord) { return parseFloat(coord) || 0 });
@@ -196,13 +256,11 @@ export async function parseMesh(objText, transforms, worldTransforms, basePath) 
   //   }
   // });
 
+  //debugger;
   Object.entries(groups).forEach((pair) => {
     let key = pair[0];
     let group = pair[1];
     console.log(transforms.path, key, group.triangles.length, "triangles");
-    group.triangles.forEach((tri) => {
-      calcTangents(tri);
-    });
   });
   return Promise.resolve({ groups: groups, urls: urls });
 }

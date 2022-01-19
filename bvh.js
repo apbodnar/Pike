@@ -246,20 +246,13 @@ export class Node {
 }
 
 export class Triangle {
-  constructor(verts, indices, uvs, transforms) {
+  constructor(verts, uvs) {
     this.verts = verts;
-    this.indices = indices;
     this.uvs = uvs;
     this.tangents = [];
     this.bitangents = [];
     this.normals = null;
     this.boundingBox = new BoundingBox().addTriangle(this);
-    this.transforms = transforms;
-    this.material = {};
-  }
-
-  setNormals(normals) {
-    this.normals = normals;
   }
 }
 
