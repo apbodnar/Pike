@@ -19,7 +19,7 @@ struct Triangle {
 };
 
 struct VertexPositions {
-  pos: [[stride(16)]] array<vec3<f32>>;
+  pos: array<vec3<f32>>;
 };
 
 struct VertexAttribute {
@@ -30,7 +30,7 @@ struct VertexAttribute {
 };
 
 struct VertexAttributes {
-  attributes: [[stride(64)]] array<VertexAttribute>;
+  attributes: array<VertexAttribute>;
 };
 
 struct MaterialIndex {
@@ -41,7 +41,7 @@ struct MaterialIndex {
 };
 
 struct MaterialIndices {
-  indices: [[stride(16)]] array<MaterialIndex>;
+  indices: array<MaterialIndex>;
 };
 
 struct Node {
@@ -54,11 +54,11 @@ struct Node {
 };
 
 struct BVH {
-  nodes: [[stride(48)]] array<Node>;
+  nodes: array<Node>;
 };
 
 struct Triangles {
-  triangles: [[stride(16)]] array<Triangle>;
+  triangles: array<Triangle>;
 };
 
 struct Ray {
@@ -81,7 +81,7 @@ struct State {
 };
 
 struct LuminanceCoords {
-  coords: [[stride(8)]] array<vec2<i32>>;
+  coords: array<vec2<i32>>;
 };
 
 struct LuminanceBin {
@@ -90,7 +90,7 @@ struct LuminanceBin {
 };
 
 struct LuminanceBins {
-  bins: [[stride(8)]] array<LuminanceBin>;
+  bins: array<LuminanceBin>;
 };
 
 struct Sample {
@@ -98,23 +98,24 @@ struct Sample {
   pdf: f32;
 };
 
-[[group(0), binding(0)]] var inputTex : texture_2d<f32>;
-[[group(0), binding(1)]] var outputTex : texture_storage_2d<rgba32float, write>;
+@group(0) @binding(0) var inputTex : texture_2d<f32>;
+@group(0) @binding(1) var outputTex : texture_storage_2d<rgba32float, write>;
 
-[[group(1), binding(0)]] var<storage, read> bvh: BVH;
-[[group(1), binding(1)]] var<storage, read> triangles: Triangles;
-[[group(1), binding(2)]] var<storage, read> vertices: VertexPositions;
-[[group(1), binding(3)]] var<storage, read> attrs: VertexAttributes;
-[[group(1), binding(4)]] var<storage, read> materials: MaterialIndices;
-[[group(1), binding(5)]] var atlasTex: texture_2d_array<f32>;
-[[group(1), binding(6)]] var envTex: texture_2d<f32>;
-[[group(1), binding(7)]] var<storage, read> envCoords: LuminanceCoords;
-[[group(1), binding(8)]] var<storage, read> envLuminance: LuminanceBins;
-[[group(1), binding(9)]] var pdfTex: texture_2d<f32>;
+@group(1) @binding(0) var<storage, read> bvh: BVH;
+@group(1) @binding(1) var<storage, read> triangles: Triangles;
+@group(1) @binding(2) var<storage, read> vertices: VertexPositions;
+@group(1) @binding(3) var<storage, read> attrs: VertexAttributes;
+@group(1) @binding(4) var<storage, read> materials: MaterialIndices;
+@group(1) @binding(5) var atlasTex: texture_2d_array<f32>;
+@group(1) @binding(6) var envTex: texture_2d<f32>;
+@group(1) @binding(7) var pdfTex: texture_2d<f32>;
+@group(1) @binding(8) var<storage, read> envCoords: LuminanceCoords;
+@group(1) @binding(9) var<storage, read> envLuminance: LuminanceBins;
 
-[[group(2), binding(0)]] var<uniform> state: State;
-[[group(2), binding(1)]] var atlasSampler: sampler;
-[[group(2), binding(2)]] var envSampler: sampler;
+
+@group(2) @binding(0) var<uniform> state: State;
+@group(2) @binding(1) var atlasSampler: sampler;
+@group(2) @binding(2) var envSampler: sampler;
 
 fn hash() -> u32 {
   //Jarzynski and Olano Hash
@@ -170,24 +171,6 @@ fn rayTriangleIntersect(ray: Ray, tri: Triangle, bary: ptr<function, vec3<f32>>)
   (*bary) = vec3<f32>(1f - u - v, u, v);
   return select(MAX_T, dist, dist > EPSILON);
 }
-
-// fn tightRayTriangleIntersect(ray: Ray, tri: Triangle, bary: ptr<function, vec3<f32>>) -> f32 {
-//   var kz = 0;
-//   let x = abs(ray.dir.x);
-//   let y = abs(ray.dir.y);
-//   let z = abs(ray.dir.z);
-//   var maxAxis = 0;
-//   maxAxis = select(maxAxis, 0, abs(x) > ray.dir[maxAxis]);
-//   maxAxis = select(maxAxis, 1, abs(y) > ray.dir[maxAxis]);
-//   maxAxis = select(maxAxis, 2, abs(z) > ray.dir[maxAxis]);
-//   let kx = (kz + 1) % 3;
-//   let ky = (kx + 1) % 3;
-//   if (ray.dir[kz] < 0.0f) {
-//     let temp = kx;
-//     kx = ky;
-//     ky = temp;
-//   }
-// }
 
 fn processLeaf(leaf: Node, ray: Ray, result: ptr<function, Hit>){
   let leafSize = leaf.triangles >> 24u;
@@ -420,9 +403,9 @@ fn intersectScene(ray: Ray, anyHit: bool) -> Hit {
 	return result;
 }
 
-[[stage(compute), workgroup_size(16, 16, 1)]]
+@stage(compute) @workgroup_size(16, 16, 1)
 fn main(
-  [[builtin(global_invocation_id)]] GID : vec3<u32>,
+  @builtin(global_invocation_id) GID : vec3<u32>,
 ) {
   let dims = vec2<f32>(textureDimensions(inputTex, 0));
   let gid = vec2<f32>(GID.xy);

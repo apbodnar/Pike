@@ -44,8 +44,16 @@ export class Vec3 {
     return v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2];
   }
 
-  static lerp(v1, v2, sigma) {
-    return Vec3.add(v1, Vec3.scale(Vec3.sub(v2, v1), sigma));
+  static lerp1(v1, v2, r) {
+    return Vec3.add(v1, Vec3.scale(Vec3.sub(v2, v1), r));
+  }
+
+  static lerp3(v1, v2, r) {
+    return Vec3.add(v1, Vec3.mult(Vec3.sub(v2, v1), r));
+  }
+
+  static trunc(v) {
+    return [Math.trunc(v[0]), Math.trunc(v[1]), Math.trunc(v[2])]
   }
 
   static pow(v, exp) {
@@ -93,6 +101,14 @@ export class Vec3 {
       x1 = y * Math.sin(a) + x * Math.cos(a),
       y1 = y * Math.cos(a) - x * Math.sin(a);
     return [x1, y1, z];
+  }
+
+  static clamp(num, min, max) {
+    return this.min(this.max(num, min), max);
+  }
+
+  static clamp1(num, min, max) {
+    return Math.min(Math.max(num, min), max);
   }
 
   static rotateArbitrary(v, axis, angle) {

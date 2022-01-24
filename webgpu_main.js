@@ -1,5 +1,6 @@
 import * as Utility from './utility.js'
 import * as ObjLoader from './obj_loader.js'
+import { Scene } from './scene.js'
 import { TexturePacker } from './texture_packer.js'
 import { EnvironmentGenerator } from './env_sampler.js'
 import { BVH } from './bvh.js'
@@ -15,9 +16,10 @@ import {
   VertexIndexStruct,
   VertexPositionStruct,
 } from './webgpu_utils.js';
+import { SplitBVH } from './sbvh.js'
+import { Raycaster } from './raycaster.js'
 
 async function PathTracer(scenePath, resolution) {
-  let bvh;
   let samples = 0;
   let lastDraw = 0;
 
@@ -152,14 +154,16 @@ async function PathTracer(scenePath, resolution) {
         materials.push(material);
       });
     }
-    let time = new Date().getTime();
+    let time = performance.now();
     console.log("Building BVH:", geometry.length, "triangles");
-    time = new Date().getTime();
-    bvh = new BVH(geometry);
-    console.log("BVH built in ", (new Date().getTime() - time) / 1000.0, " seconds.  Depth: ", bvh.depth);
-    time = new Date().getTime();
+    time = performance.now();
+    const bvh = new BVH(geometry);
+    //const bvh = new SplitBVH(geometry, attributes);
+    console.log("BVH built in ", (performance.now() - time) / 1000.0, " seconds.  Depth: ", bvh.depth);
+
+    time = performance.now();
     let bvhArray = bvh.serializeTree();
-    console.log("BVH serialized in", (new Date().getTime() - time) / 1000.0, " seconds");
+    console.log("BVH serialized in", (performance.now() - time) / 1000.0, " seconds");
     const attributeBuffer = new WGSLPackedStructArray(VertexAttributeStruct, attributes.length);
     const bvhBuffer = new WGSLPackedStructArray(BVHNodeStruct, bvhArray.length);
     const trianglesBuffer = new WGSLPackedStructArray(VertexIndexStruct, bvh.numLeafTris * 3);
@@ -182,8 +186,8 @@ async function PathTracer(scenePath, resolution) {
         left: node.leaf ? -1 : e.left,
         right: node.leaf ? -1 : e.right,
         triangles: node.leaf ? maskTriIndex(triIndex, node.getleafSize()) : -1,
-        boxMin: node.boundingBox.min,
-        boxMax: node.boundingBox.max,
+        boxMin: node.bounds.min,
+        boxMax: node.bounds.max,
       }));
       if (node.leaf) {
         let tris = node.getTriangles();
@@ -267,22 +271,23 @@ async function PathTracer(scenePath, resolution) {
         },
         {
           binding: 7,
+          resource: pdfTexture.createView(),
+        },
+        {
+          binding: 8,
           resource: {
             buffer: luminanceCoordBuffer.createWGPUBuffer(device, GPUBufferUsage.STORAGE),
             size: luminanceCoordBuffer.size,
           },
         },
         {
-          binding: 8,
+          binding: 9,
           resource: {
             buffer: luminanceBinBuffer.createWGPUBuffer(device, GPUBufferUsage.STORAGE),
             size: luminanceBinBuffer.size,
           },
         },
-        {
-          binding: 9,
-          resource: pdfTexture.createView(),
-        },
+
       ],
     });
   }
@@ -345,7 +350,7 @@ async function PathTracer(scenePath, resolution) {
       computePass.endPass();
     }
 
-    const params = new PostprocessParamsStruct({exposure});
+    const params = new PostprocessParamsStruct({ exposure });
     const source = params.createWGPUBuffer(device, GPUBufferUsage.COPY_SRC);
     commandEncoder.copyBufferToBuffer(source, 0, postprocessParamsBuffer, 0, params.size);
     const passEncoder = commandEncoder.beginRenderPass({
@@ -550,8 +555,10 @@ function getResolution() {
   }
 }
 
-let sceneMatch = window.location.search.match(/scene=([a-zA-Z0-9_]+)/);
-let scenePath = Array.isArray(sceneMatch) ? 'scene/' + sceneMatch[1] + '.json' : 'scene/bunny.json';
-let resolution = getResolution();
-
+const sceneMatch = window.location.search.match(/scene=([a-zA-Z0-9_]+)/);
+const scenePath = Array.isArray(sceneMatch) ? 'scene/' + sceneMatch[1] + '.json' : 'scene/bunny.json';
+const resolution = getResolution();
+const scene = await new Scene().load('scene/knight.json');
+debugger;
+scene.meshes[0][0].primitives[0].indexAt(6)
 PathTracer(scenePath, resolution);

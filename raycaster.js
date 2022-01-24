@@ -67,8 +67,8 @@ export class Raycaster {
   }
 
   closestNode(ray, nLeft, nRight) {
-    let tLeft = this.rayBoxIntersect(ray, nLeft.boundingBox);
-    let tRight = this.rayBoxIntersect(ray, nRight.boundingBox);
+    let tLeft = this.rayBoxIntersect(ray, nLeft.bounds);
+    let tRight = this.rayBoxIntersect(ray, nRight.bounds);
     let left = tLeft < MAX_T ? nLeft : null;
     let right = tRight < MAX_T ? nRight : null;
     if (tLeft < tRight) {

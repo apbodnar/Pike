@@ -116,8 +116,8 @@ export class BVH {
 
   _sortIndices(indices, axis) {
     indices.sort((i1, i2) => {
-      let c1 = this.triangles[i1].boundingBox.centroid[axis];
-      let c2 = this.triangles[i2].boundingBox.centroid[axis];
+      let c1 = this.triangles[i1].bounds.centroid[axis];
+      let c2 = this.triangles[i2].bounds.centroid[axis];
       if (c1 < c2) {
         return -1;
       }
@@ -185,11 +185,11 @@ export class Node {
   constructor(triangles, indices) {
     this.triangles = triangles;
     this.indices = indices;
-    this.boundingBox = new BoundingBox().addNode(this);
+    this.bounds = new BoundingBox().addNode(this);
     this.leaf = false;
     this.left = null;
     this.right = null;
-    this.traversalCost = 0.250;
+    this.traversalCost = 0.5;
   }
 
   getleafSize() {
@@ -210,7 +210,7 @@ export class Node {
 
   setSplit() {
     let bestCost = Infinity;
-    let parentSurfaceArea = this.boundingBox.getSurfaceArea();
+    let parentSurfaceArea = this.bounds.getSurfaceArea();
     for (let axis = 0; axis < 3; axis++) {
       let bbFront = new BoundingBox();
       let bbBack = new BoundingBox();
@@ -220,8 +220,8 @@ export class Node {
       for (let i = 0; i < idxCache.length; i++) {
         let triFront = this.triangles[idxCache[i]];
         let triBack = this.triangles[idxCache[idxCache.length - 1 - i]];
-        bbFront.addBoundingBox(triFront.boundingBox);
-        bbBack.addBoundingBox(triBack.boundingBox);
+        bbFront.addBoundingBox(triFront.bounds);
+        bbBack.addBoundingBox(triBack.bounds);
         surfacesFront[i] = bbFront.getSurfaceArea();
         surfacesBack[i] = bbBack.getSurfaceArea();
       }
@@ -247,9 +247,10 @@ export class Node {
 
 export class Triangle {
   constructor(indices, attributes) {
+    this.index = -1;
     this.indices = indices;
     this.attributes = attributes;
-    this.boundingBox = new BoundingBox().addTriangle(this);
+    this.bounds = new BoundingBox().addTriangle(this);
   }
 
   get verts() {
