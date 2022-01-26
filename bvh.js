@@ -2,11 +2,11 @@ import { Vec3 } from './vector.js'
 import { Queue } from './utility.js'
 
 export class BVH {
-  constructor(triangles) {
-    let xIndices = triangles.map((_, i) => { return i });
+  constructor(scene) {
+    this.triangles = this._createTriangles(scene.indices, scene.attributes);
+    let xIndices = this.triangles.map((_, i) => { return i });
     let yIndices = Array.from(xIndices);
     let zIndices = Array.from(yIndices);
-    this.triangles = triangles;
     this.depth = 0;
     this._sortIndices(xIndices, 0);
     this._sortIndices(yIndices, 1);
@@ -16,6 +16,14 @@ export class BVH {
     this.root = this.buildTree([xIndices, yIndices, zIndices], this.depth);
     console.log("Largest leaf:", this.largestLeaf);
     //const r = this.buildTree2([xIndices, yIndices, zIndices])
+  }
+
+  _createTriangles(indices, attributes) {
+    const triangles = [];
+    for (const triDesc of indices) {
+      triangles.push(new Triangle(triDesc, attributes));
+    }
+    return triangles;
   }
 
   buildTree(indices, depth) {
@@ -246,41 +254,11 @@ export class Node {
 }
 
 export class Triangle {
-  constructor(indices, attributes) {
-    this.index = -1;
-    this.indices = indices;
+  constructor(desc, attributes) {
+    this.desc = desc;
     this.attributes = attributes;
+    this.verts = [desc.i0, desc.i1, desc.i2].map((i) => {return this.attributes[i].pos});
     this.bounds = new BoundingBox().addTriangle(this);
-  }
-
-  get verts() {
-    return this.indices.map((i) => {
-      return this.attributes[i].position;
-    })
-  }
-
-  get uvs() {
-    return this.indices.map((i) => {
-      return this.attributes[i].uv;
-    })
-  }
-
-  get normals() {
-    return this.indices.map((i) => {
-      return this.attributes[i].normal;
-    })
-  }
-
-  get tangents() {
-    return this.indices.map((i) => {
-      return this.attributes[i].tangent;
-    })
-  }
-
-  get bitangents() {
-    return this.indices.map((i) => {
-      return this.attributes[i].bitangent;
-    })
   }
 }
 

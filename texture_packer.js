@@ -110,7 +110,7 @@ class WebGLTextureWriter {
     
     void main(void) {
       vec2 uv = gl_FragCoord.xy / dims;
-      uv.y = 1.0 - uv.y;
+      uv.y = uv.y;
       vec4 c = texture(tex, uv);
       vec4 copy = c;
       c[0] = copy[swizzle[0]];

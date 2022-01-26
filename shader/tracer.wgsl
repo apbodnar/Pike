@@ -346,9 +346,9 @@ fn createPrimaryRay(gid: vec2<f32>, dims: vec2<f32>) -> Ray {
 fn interpolateVertexAttribute(tri: Triangle, bary: vec3<f32>) -> VertexAttribute {
   //var attr: array<VertexAttribute, 3> = attrs.attributes[i];
   return VertexAttribute(
-    mat3x3<f32>(attrs.attributes[tri.i1].tangent, attrs.attributes[tri.i2].tangent, attrs.attributes[tri.i3].tangent) * bary,
-    mat3x3<f32>(attrs.attributes[tri.i1].bitangent, attrs.attributes[tri.i2].bitangent, attrs.attributes[tri.i3].bitangent) * bary,
-    mat3x3<f32>(attrs.attributes[tri.i1].normal, attrs.attributes[tri.i2].normal, attrs.attributes[tri.i3].normal) * bary,
+    normalize(mat3x3<f32>(attrs.attributes[tri.i1].tangent, attrs.attributes[tri.i2].tangent, attrs.attributes[tri.i3].tangent) * bary),
+    normalize(mat3x3<f32>(attrs.attributes[tri.i1].bitangent, attrs.attributes[tri.i2].bitangent, attrs.attributes[tri.i3].bitangent) * bary),
+    normalize(mat3x3<f32>(attrs.attributes[tri.i1].normal, attrs.attributes[tri.i2].normal, attrs.attributes[tri.i3].normal) * bary),
     mat3x2<f32>(attrs.attributes[tri.i1].uv, attrs.attributes[tri.i2].uv, attrs.attributes[tri.i3].uv) * bary,
   );
 }
@@ -428,17 +428,17 @@ fn main(
     var attr = interpolateVertexAttribute(tri, hit.bary);
     let matIdx = materials.indices[tri.matId];
     let mapNormal = (textureSampleLevel(atlasTex, atlasSampler, attr.uv, matIdx.normMap, 0f).xyz - vec3<f32>(0.5, 0.5, 0.0)) * vec3<f32>(2.0, 2.0, 1.0);
-    let normal = normalize(mat3x3<f32>(attr.tangent, attr.bitangent, attr.normal) * mapNormal);
+    let normal =  normalize(mat3x3<f32>(attr.tangent, attr.bitangent, attr.normal) * mapNormal);
     // ONB used for computations using the mapped normal;
     let ONB = branchlessONB(normal);
     let metRough = textureSampleLevel(atlasTex, atlasSampler, attr.uv, matIdx.metRoughMap, 0f).xyz;
     let diffuse = textureSampleLevel(atlasTex, atlasSampler, attr.uv, matIdx.diffMap, 0f).xyz;
-    let specular = mix(vec3<f32>(1f), diffuse, metRough.r);
+    let specular = mix(vec3<f32>(1f), diffuse, metRough.b);
     let origin = ray.origin + ray.dir * (hit.t - EPSILON * 40f);
     let a = metRough.g * metRough.g;
     let wo = -ray.dir * ONB;
     let m = sampleGGX(wo, a, a);
-    let f = mix(schlick(max(dot(wo, m), 0f), 1.4), 1f, metRough.r);
+    let f = mix(schlick(max(dot(wo, m), 0f), 1.4), 1f, metRough.b);
     // Sample the environment light
     let envSample = sampleEnv(ONB);
     let envDir = ONB * envSample.wi;

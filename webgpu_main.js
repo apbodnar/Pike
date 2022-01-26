@@ -1,13 +1,9 @@
-import * as Utility from './utility.js'
-import * as ObjLoader from './obj_loader.js'
 import { Scene } from './scene.js'
-import { TexturePacker } from './texture_packer.js'
 import { EnvironmentGenerator } from './env_sampler.js'
 import { BVH } from './bvh.js'
 import { CameraController } from './camera_controller.js'
 import {
   BVHNodeStruct,
-  TriangleStruct,
   VertexAttributeStruct,
   WGSLPackedStructArray,
   RenderStateStruct,
@@ -16,10 +12,8 @@ import {
   VertexIndexStruct,
   VertexPositionStruct,
 } from './webgpu_utils.js';
-import { SplitBVH } from './sbvh.js'
-import { Raycaster } from './raycaster.js'
 
-async function PathTracer(scenePath, resolution) {
+async function PathTracer(scene, resolution) {
   let samples = 0;
   let lastDraw = 0;
 
@@ -40,7 +34,6 @@ async function PathTracer(scenePath, resolution) {
     exposure = parseFloat(e.target.value);
   }, false);
   let camera = new CameraController(elements.canvasElement, { dir: [0, 0, -1], origin: [0, 0, 2] }, (e) => { samples = 0 });
-  let texturePacker = new TexturePacker(2048);
   let postProcessBindGroup;
   let renderTargetBindGroups;
   let uniformsBindGroup;
@@ -54,129 +47,30 @@ async function PathTracer(scenePath, resolution) {
     requiredLimits: adapter.limits,
   });
   let context;
-  function getMaterial(transforms, group, assets, basePath) {
-    let material = {};
-    let diffuseIndex = null;
-    let roughnessIndex = null;
-    let normalIndex = null;
-    let emitIndex = null;
-    if (group.material["map_kd"]) {
-      let assetUrl = basePath + "/" + group.material["map_kd"];
-      diffuseIndex = texturePacker.addTexture(assets[assetUrl], true);
-    } else if (group.material["kd"]) {
-      diffuseIndex = texturePacker.addColor(group.material["kd"]);
-    } else if (typeof transforms.diffuse === 'string') {
-      diffuseIndex = texturePacker.addTexture(assets[transforms.diffuse], true);
-    } else if (typeof transforms.diffuse === 'object') {
-      diffuseIndex = texturePacker.addColor(transforms.diffuse);
-    } else {
-      diffuseIndex = texturePacker.addColor([0.5, 0.5, 0.5]);
-    }
-
-    if (group.material["map_pmr"]) {
-      let assetUrl = basePath + "/" + group.material["map_pmr"];
-      let img = assets[assetUrl];
-      img.swizzle = group.material["pmr_swizzle"] || transforms.mrSwizzle;
-      roughnessIndex = texturePacker.addTexture(img);
-    } else if (group.material["pmr"]) {
-      roughnessIndex = texturePacker.addColor(group.material["pmr"]);
-    } else if (typeof transforms.metallicRoughness === 'string') {
-      let img = assets[transforms.metallicRoughness];
-      img.swizzle = transforms.mrSwizzle;
-      roughnessIndex = texturePacker.addTexture(img);
-    } else if (typeof transforms.metallicRoughness === 'object') {
-      roughnessIndex = texturePacker.addColor(transforms.metallicRoughness);
-    } else if (group.material["ns"]) {
-      roughnessIndex = texturePacker.addColor([0, Math.sqrt(2 / (group.material["ns"] + 2)), 0]);
-    } else {
-      roughnessIndex = texturePacker.addColor([0.0, 0.3, 0]);
-    }
-
-    // TODO rename this
-    if (group.material["map_kem"]) {
-      let assetUrl = basePath + "/" + group.material["map_kem"];
-      emitIndex = texturePacker.addTexture(assets[assetUrl]);
-    } else if (group.material["kem"]) {
-      emitIndex = texturePacker.addColor(group.material["kem"]);
-    } else if (typeof transforms.emission === 'string') {
-      emitIndex = texturePacker.addTexture(assets[transforms.emission]);
-    } else {
-      emitIndex = texturePacker.addColor([0, 0, 0]);
-    }
-
-    if (group.material["map_bump"]) {
-      let assetUrl = basePath + "/" + group.material["map_bump"];
-      normalIndex = texturePacker.addTexture(assets[assetUrl]);
-    } else if (transforms.normal) {
-      normalIndex = texturePacker.addTexture(assets[transforms.normal]);
-    } else {
-      normalIndex = texturePacker.addColor([0.5, 0.5, 1]);
-    }
-    material.diffuseIndex = diffuseIndex;
-    material.roughnessIndex = roughnessIndex;
-    material.normalIndex = normalIndex;
-    material.emitIndex = emitIndex;
-    material.ior = group.material["ior"] || transforms.ior || 1.4;
-    material.dielectric = group.material["dielectric"] || transforms.dielectric || -1;
-    material.emittance = transforms.emittance;
-    return material;
-  }
-
   function maskTriIndex(index, numTris) {
     // Protect the sign bit?
     let mask = numTris << 24;
     return mask | index;
   }
 
-  async function initBVH(assets) {
-    let scene = JSON.parse(assets[scenePath]);
-    let geometry = [];
-    let materials = [];
-    let attributes = [];
-    let props = mergeSceneProps(scene);
-    for (let i = 0; i < props.length; i++) {
-      let prop = props[i];
-      let basePath = prop.path.split('/').slice(0, -1).join('/');
-      console.log("Parsing:", prop.path);
-      let parsed = await ObjLoader.parseMesh(assets[prop.path], prop, scene.worldTransforms, basePath, attributes);
-      let groups = parsed.groups;
-      if (parsed.urls && parsed.urls.size > 0) {
-        console.log("Downloading: \n", Array.from(parsed.urls).join('\n'));
-        let newTextures = await Utility.loadAll(Array.from(parsed.urls));
-        assets = Object.assign(assets, newTextures);
-      }
-      Object.values(groups).forEach((group) => {
-        let material = getMaterial(prop, group, assets, basePath);
-        group.triangles.forEach((t) => {
-          t.material = materials.length;
-          geometry.push(t)
-        });
-        materials.push(material);
-      });
-    }
+  async function initBVH() {
     let time = performance.now();
-    console.log("Building BVH:", geometry.length, "triangles");
+    //console.log("Building BVH:", geometry.length, "triangles");
     time = performance.now();
-    const bvh = new BVH(geometry);
+    const bvh = new BVH(scene);
     //const bvh = new SplitBVH(geometry, attributes);
     console.log("BVH built in ", (performance.now() - time) / 1000.0, " seconds.  Depth: ", bvh.depth);
-
     time = performance.now();
     let bvhArray = bvh.serializeTree();
     console.log("BVH serialized in", (performance.now() - time) / 1000.0, " seconds");
-    const attributeBuffer = new WGSLPackedStructArray(VertexAttributeStruct, attributes.length);
+    const attributeBuffer = new WGSLPackedStructArray(VertexAttributeStruct, scene.attributes.length);
+    const indexBuffer = new WGSLPackedStructArray(VertexIndexStruct, bvh.numLeafTris * 3);
     const bvhBuffer = new WGSLPackedStructArray(BVHNodeStruct, bvhArray.length);
-    const trianglesBuffer = new WGSLPackedStructArray(VertexIndexStruct, bvh.numLeafTris * 3);
-    const positionBuffer = new WGSLPackedStructArray(VertexPositionStruct, attributes.length);
-    const materialsBuffer = new WGSLPackedStructArray(MaterialIndexStruct, materials.length);
-    materials.forEach((mat) => {
-      materialsBuffer.push(new MaterialIndexStruct({
-        diffMap: mat.diffuseIndex,
-        metRoughMap: mat.roughnessIndex,
-        normMap: mat.normalIndex,
-        emitMap: mat.emitIndex,
-      }));
-    });
+    const positionBuffer = new WGSLPackedStructArray(VertexPositionStruct, scene.attributes.length);
+    const materialsBuffer = new WGSLPackedStructArray(MaterialIndexStruct, scene.materials.length);
+    for (const mat of scene.materials) {
+      materialsBuffer.push(new MaterialIndexStruct(mat));
+    }
     let triIndex = 0;
     for (let i = 0; i < bvhArray.length; i++) {
       let e = bvhArray[i];
@@ -193,36 +87,22 @@ async function PathTracer(scenePath, resolution) {
         let tris = node.getTriangles();
         triIndex += tris.length;
         for (let j = 0; j < tris.length; j++) {
-          trianglesBuffer.push(new VertexIndexStruct({
-            i0: tris[j].indices[0],
-            i1: tris[j].indices[1],
-            i2: tris[j].indices[2],
-            matId: tris[j].material,
-          }));
+          indexBuffer.push(new VertexIndexStruct(tris[j].desc));
         }
       }
     }
 
-    for (let attribute of attributes) {
-      attributeBuffer.push(new VertexAttributeStruct({
-        normal: attribute.normal,
-        tangent: attribute.tangent,
-        bitangent: attribute.bitangent,
-        uv: attribute.uv,
-      }));
-      positionBuffer.push(new VertexPositionStruct({
-        pos: attribute.position,
-      }));
+    for (let attribute of scene.attributes) {
+      attributeBuffer.push(new VertexAttributeStruct(attribute));
+      positionBuffer.push(new VertexPositionStruct(attribute));
     }
 
     const atlasTexture = createAtlasTetxure();
-    const envGenerator = new EnvironmentGenerator(assets[scene.environment]);
+    const envGenerator = new EnvironmentGenerator(scene.env);
     const envTexture = await envGenerator.createLuminanceMap(device);
     const luminanceBinBuffer = envGenerator.createHistogramBuffer();
     const luminanceCoordBuffer = envGenerator.createEnvCoordBuffer();
     const pdfTexture = envGenerator.createPdfTexture(device);
-    //let envLookup = await envGenerator.createLookupTexture(device);
-    //let radianceBinBuffer = await envGenerator.createLuminanceStrataBuffer();
     storageBindGroup = device.createBindGroup({
       layout: tracerPipeline.getBindGroupLayout(1),
       entries: [
@@ -236,8 +116,8 @@ async function PathTracer(scenePath, resolution) {
         {
           binding: 1,
           resource: {
-            buffer: trianglesBuffer.createWGPUBuffer(device, GPUBufferUsage.STORAGE),
-            size: trianglesBuffer.size,
+            buffer: indexBuffer.createWGPUBuffer(device, GPUBufferUsage.STORAGE),
+            size: indexBuffer.size,
           },
         },
         {
@@ -293,8 +173,8 @@ async function PathTracer(scenePath, resolution) {
   }
 
   function createAtlasTetxure() {
-    let atlasRes = texturePacker.setAndGetResolution();
-    let pixels = texturePacker.getPixels();
+    let atlasRes = scene.texturePacker.setAndGetResolution();
+    let pixels = scene.texturePacker.getPixels();
     const extent = {
       width: atlasRes[0],
       height: atlasRes[1],
@@ -371,10 +251,6 @@ async function PathTracer(scenePath, resolution) {
     requestAnimationFrame(tick);
   }
 
-  function mergeSceneProps(scene) {
-    return [].concat((scene.props || []), (scene.static_props || []), Object.values(scene.animated_props || []))
-  }
-
   async function createPipelines() {
     elements.canvasElement.width = resolution[0];
     elements.canvasElement.height = resolution[1];
@@ -402,9 +278,6 @@ async function PathTracer(scenePath, resolution) {
           code: quadWGSL,
         }),
         entryPoint: 'vert_main',
-        constants: {
-          0: 3, // leafSize
-        },
       },
       fragment: {
         module: device.createShaderModule({
@@ -504,42 +377,16 @@ async function PathTracer(scenePath, resolution) {
         },
       ],
     });
-
-
   }
 
-  async function start(res) {
+  async function start() {
     await createPipelines();
-    await initBVH(res);
+    await initBVH();
     await initWebGpu();
     console.log("Beginning render");
     tick();
   }
-
-  let sceneRes = await Utility.getText(scenePath);
-  // Use a set to prevent multiple requests
-  let pathSet = new Set([scenePath]);
-  let scene = JSON.parse(sceneRes);
-  mergeSceneProps(scene).forEach(function (e) {
-    pathSet.add(e.path);
-    if (typeof e.diffuse === 'string') {
-      pathSet.add(e.diffuse);
-    }
-    if (typeof e.metallicRoughness === 'string') {
-      pathSet.add(e.metallicRoughness);
-    }
-    if (e.normal) {
-      pathSet.add(e.normal);
-    }
-    if (e.emission) {
-      pathSet.add(e.emission);
-    }
-  });
-  if (typeof scene.environment === 'string') {
-    pathSet.add(scene.environment);
-  }
-  let assetRes = await Utility.loadAll(Array.from(pathSet));
-  start(assetRes);
+  start();
 }
 
 function getResolution() {
@@ -558,7 +405,5 @@ function getResolution() {
 const sceneMatch = window.location.search.match(/scene=([a-zA-Z0-9_]+)/);
 const scenePath = Array.isArray(sceneMatch) ? 'scene/' + sceneMatch[1] + '.json' : 'scene/bunny.json';
 const resolution = getResolution();
-const scene = await new Scene().load('scene/knight.json');
-debugger;
-scene.meshes[0][0].primitives[0].indexAt(6)
-PathTracer(scenePath, resolution);
+const scene = await new Scene().load(scenePath);
+PathTracer(scene, resolution);

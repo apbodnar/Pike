@@ -4,11 +4,11 @@ export class WGSLPackedStruct {
     for (const member of desc) {
       const value = args[member.name];
       if (value === undefined) {
-        throw new Error("Unexpected member value for:", member.name);
+        throw new Error("Unexpected member value for: " + member.name);
       }
       const v = Array.isArray(value) ? value : [value];
       if (v.length !== member.count) {
-        throw new Error("Unexpected member length:", member.name, value);
+        throw new Error("Unexpected member length:" + member.name + " " + value);
       }
       member.value = value;
     }
@@ -136,6 +136,10 @@ export class WGSLPackedStructArray {
     //this.view.set(new Uint8Array(struct.toArrayBuffer()), this.offset);
     this._setArrayBuffer(struct);
     this.offset += this.stride;
+  }
+
+  arrayBuffer() {
+    return this.buf;
   }
 
   get size() {
