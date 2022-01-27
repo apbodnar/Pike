@@ -219,7 +219,9 @@ export class RenderStateStruct extends WGSLPackedStruct {
       { name: "dir", type: Float32Array, count: 3 },
       { name: "samples", type: Int32Array, count: 1 },
       { name: "fov", type: Float32Array, count: 1 },
-      { name: "envTheta", type: Float32Array, count: 1}
+      { name: "envTheta", type: Float32Array, count: 1},
+      { name: "focalDepth", type: Float32Array, count: 1 },
+      { name: "apertureSize", type: Float32Array, count: 1},
     ];
   }
 }

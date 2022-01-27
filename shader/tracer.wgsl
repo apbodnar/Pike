@@ -78,6 +78,8 @@ struct State {
   samples: i32;
   fov: f32;
   envTheta: f32;
+  focalDepth: f32;
+  apertureSize: f32;
 };
 
 struct LuminanceCoords {
@@ -335,12 +337,15 @@ fn powerHeuristic(pdf0: f32, pdf1: f32) -> f32 {
 
 fn createPrimaryRay(gid: vec2<f32>, dims: vec2<f32>) -> Ray {
   let uv = (2f * ((gid + vec2<f32>(rand(), rand())) / dims) - 1f) * vec2<f32>(dims.x / dims.y, -1f);
-  let origin = state.eye.origin;
   let up = vec3<f32>(0f, 1f, 0f);
   let basisX: vec3<f32> = normalize(cross(state.eye.dir, up)) * state.fov;
   let basisY: vec3<f32> = normalize(cross(basisX, state.eye.dir)) * state.fov;
+  let theta = rand() * M_TAU;
+  let dof = (cos(theta) * basisX + sin(theta) * basisY) * state.apertureSize * sqrt(rand());
   let screen: vec3<f32> = uv.x * basisX + uv.y * basisY + state.eye.dir + state.eye.origin;
- return Ray(state.eye.origin, normalize(screen - state.eye.origin));
+  let dir = normalize((screen + dof * state.focalDepth) - (state.eye.origin + dof));
+  let origin = dof + state.eye.origin;
+  return Ray(origin, dir);
 }
 
 fn interpolateVertexAttribute(tri: Triangle, bary: vec3<f32>) -> VertexAttribute {

@@ -1,7 +1,3 @@
-/**
- * Created by adam on 6/26/17.
- */
-
 export class TexturePacker {
   constructor(atlasRes) {
     this.res = atlasRes;
@@ -103,7 +99,6 @@ class WebGLTextureWriter {
     let fsStr = `#version 300 es
     precision highp float;
     uniform vec2 dims;
-    uniform uvec4 swizzle;
     uniform sampler2D tex;
     
     out vec4 fragColor;
@@ -112,17 +107,12 @@ class WebGLTextureWriter {
       vec2 uv = gl_FragCoord.xy / dims;
       uv.y = uv.y;
       vec4 c = texture(tex, uv);
-      vec4 copy = c;
-      c[0] = copy[swizzle[0]];
-      c[1] = copy[swizzle[1]];
-      c[2] = copy[swizzle[2]];
-      c[3] = copy[swizzle[3]];
       fragColor = vec4(c.rgb * c.a, 1.0);
     }`;
     let fs = getShader(fsStr, "FRAGMENT_SHADER");
     let vs = getShader(vsStr, "VERTEX_SHADER");
     this.program = gl.createProgram();
-    let uniforms = ["tex", "swizzle", "dims"];
+    let uniforms = ["tex", "dims"];
     let attributes = ["corner"]
     this.program.uniforms = {};
     this.program.attributes = {};
@@ -170,7 +160,6 @@ class WebGLTextureWriter {
     gl.viewport(0, 0, this.canvasElement.width, this.canvasElement.height);
     gl.uniform1i(this.program.uniforms.tex, 0);
     gl.uniform2f(this.program.uniforms.dims, this.res, this.res);
-    gl.uniform4uiv(this.program.uniforms.swizzle, img.swizzle || [0, 1, 2, 3])
     gl.activeTexture(gl.TEXTURE0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }

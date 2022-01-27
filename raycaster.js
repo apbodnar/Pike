@@ -18,7 +18,7 @@ export class Raycaster {
       return MAX_T
     }
     let invDet = 1.0 / det;
-    let t = Vec3.sub(ray.pos, tri.verts[0]);
+    let t = Vec3.sub(ray.origin, tri.verts[0]);
     let u = Vec3.dot(t, p) * invDet;
     if (u < 0 || u > 1) {
       return MAX_T
@@ -49,12 +49,12 @@ export class Raycaster {
 
   rayBoxIntersect(ray, bbox) {
     let invDir = Vec3.inverse(ray.dir),
-      tx1 = (bbox.min[0] - ray.pos[0]) * invDir[0],
-      tx2 = (bbox.max[0] - ray.pos[0]) * invDir[0],
-      ty1 = (bbox.min[1] - ray.pos[1]) * invDir[1],
-      ty2 = (bbox.max[1] - ray.pos[1]) * invDir[1],
-      tz1 = (bbox.min[2] - ray.pos[2]) * invDir[2],
-      tz2 = (bbox.max[2] - ray.pos[2]) * invDir[2];
+      tx1 = (bbox.min[0] - ray.origin[0]) * invDir[0],
+      tx2 = (bbox.max[0] - ray.origin[0]) * invDir[0],
+      ty1 = (bbox.min[1] - ray.origin[1]) * invDir[1],
+      ty2 = (bbox.max[1] - ray.origin[1]) * invDir[1],
+      tz1 = (bbox.min[2] - ray.origin[2]) * invDir[2],
+      tz2 = (bbox.max[2] - ray.origin[2]) * invDir[2];
 
     let tmin = Math.min(tx1, tx2);
     let tmax = Math.max(tx1, tx2);

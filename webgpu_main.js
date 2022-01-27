@@ -2,6 +2,7 @@ import { Scene } from './scene.js'
 import { EnvironmentGenerator } from './env_sampler.js'
 import { BVH } from './bvh.js'
 import { CameraController } from './camera_controller.js'
+import { Raycaster } from './raycaster.js'
 import {
   BVHNodeStruct,
   VertexAttributeStruct,
@@ -16,13 +17,14 @@ import {
 async function PathTracer(scene, resolution) {
   let samples = 0;
   let lastDraw = 0;
-
   let elements = {
     canvasElement: document.getElementById("trace"),
     sampleRateElement: document.getElementById("per-second"),
     sampleCount: document.getElementById("counter"),
     exposureElement: document.getElementById("exposure"),
     thetaElement: document.getElementById("env-theta"),
+    focalDepth: document.getElementById("focal-depth"),
+    apertureSize: document.getElementById("aperture-size"),
   };
   let envTheta = 0;
   elements.thetaElement.addEventListener('input', function (e) {
@@ -33,7 +35,18 @@ async function PathTracer(scene, resolution) {
   elements.exposureElement.addEventListener('input', function (e) {
     exposure = parseFloat(e.target.value);
   }, false);
-  let camera = new CameraController(elements.canvasElement, { dir: [0, 0, -1], origin: [0, 0, 2] }, (e) => { samples = 0 });
+  let focalDepth = 0.5;
+  elements.focalDepth.addEventListener('input', function (e) {
+    focalDepth = parseFloat(e.target.value);
+    samples = 0;
+  }, false);
+  let apertureSize = 0.02;
+  elements.apertureSize.addEventListener('input', function (e) {
+    apertureSize = parseFloat(e.target.value);
+    samples = 0;
+  }, false);
+  let camera = new CameraController(elements.canvasElement, { dir: [0, 0, -1], origin: [0, 0, 2] }, (e) => { onCameraMove() });
+  let raycaster = null;
   let postProcessBindGroup;
   let renderTargetBindGroups;
   let uniformsBindGroup;
@@ -53,11 +66,18 @@ async function PathTracer(scene, resolution) {
     return mask | index;
   }
 
+  function onCameraMove(e) {
+    focalDepth = 1 - 1 / raycaster.cast(camera.getCameraRay());
+    elements.focalDepth.value = focalDepth;
+    samples = 0;
+  }
+
   async function initBVH() {
     let time = performance.now();
-    //console.log("Building BVH:", geometry.length, "triangles");
+    console.log("Building BVH:", scene.indices.length, "triangles");
     time = performance.now();
     const bvh = new BVH(scene);
+    raycaster = new Raycaster(bvh);
     //const bvh = new SplitBVH(geometry, attributes);
     console.log("BVH built in ", (performance.now() - time) / 1000.0, " seconds.  Depth: ", bvh.depth);
     time = performance.now();
@@ -214,7 +234,9 @@ async function PathTracer(scene, resolution) {
         dir: ray.dir,
         samples: samples++,
         fov: camera.getFov(),
-        envTheta
+        envTheta,
+        focalDepth,
+        apertureSize,
       });
       const source = state.createWGPUBuffer(device, GPUBufferUsage.COPY_SRC);
       commandEncoder.copyBufferToBuffer(source, 0, renderStateBuffer, 0, state.size);
