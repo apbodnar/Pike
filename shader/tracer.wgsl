@@ -230,7 +230,7 @@ fn sampleEnv(ONB: mat3x3<f32>) -> Sample {
 }
 
 fn lambertPdf(wi: vec3<f32>, n: vec3<f32>) -> f32 {
-  return max(dot(wi, n), 0f) * INV_PI;
+  return max(dot(wi, n), EPSILON) * INV_PI;
 }
 
 fn sampleLambert() -> Sample {
@@ -249,7 +249,7 @@ fn evalLambert(sample: Sample) -> f32 {
   // Lambertian BRDF = Albedo / Pi
   // TODO: the math can be simplified once i'm confident in all the statistical derivations elsewhere
   // https://computergraphics.stackexchange.com/questions/8578
-  return INV_PI * max(0f, sample.wi.z) / sample.pdf;
+  return INV_PI * max(EPSILON, sample.wi.z) / sample.pdf;
 }
 
 // D for Cook Torrence microfacet BSDF using GGX distribution.
@@ -306,12 +306,12 @@ fn sampleGGX(wo: vec3<f32>, au: f32, av: f32) -> vec3<f32> {
 }
 
 fn specularPdf(wo: vec3<f32>, m: vec3<f32>, au: f32, av: f32) -> f32 {
-  return GGX_D(m, au, av) * GGX_G1(wo, m, au, av) / (4f * wo.z);
+  return max(EPSILON, GGX_D(m, au, av) * GGX_G1(wo, m, au, av) / (4f * wo.z));
 }
 
 fn sampleSpecular(wo: vec3<f32>,  m: vec3<f32>, au: f32, av: f32) -> Sample {
   let wi = reflect(-wo, m);
-  let pdf = max(specularPdf(wo, m, au, av), EPSILON);
+  let pdf = specularPdf(wo, m, au, av);
   return Sample(wi, pdf);
 }
 
@@ -469,18 +469,19 @@ fn main(
       bsdf = specular * evalSpecular(wo, bsdfSample, a, a);
     }
     
-    throughput = throughput * bsdf;
     let dir = ONB * bsdfSample.wi;
     ray = Ray(origin, dir);
     hit = intersectScene(ray, false);
     if (hit.index == NO_HIT_IDX) {
       let weight = powerHeuristic(bsdfSample.pdf, envPdf(dir));
-      color = color + throughput * envColor(dir) * weight;
+      color = color + throughput * bsdf * envColor(dir) * weight;
       break;
     }
+    throughput = throughput * bsdf;
     bounces = bounces + 1;
     if ( bounces > NUM_BOUNCES ) { break; }
   }
+  
   // Load the previous color value.
   var acc: vec3<f32> = textureLoad(inputTex, vec2<i32>(GID.xy), 0).rgb;
   acc = vec3<f32>(max(color, vec3<f32>(0f)) + (acc * f32(state.samples)))/(f32(state.samples + 1));

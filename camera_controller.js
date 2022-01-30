@@ -25,7 +25,7 @@ export class CameraController {
         let ry = (yi - e.layerY) / 180.0;
         this.ray.dir = Vec3.normalize(Vec3.rotateY(this.ray.dir, rx));
         let axis = Vec3.normalize(Vec3.cross(this.ray.dir, [0, 1, 0]));
-        this.ray.dir = Vec3.normalize(Vec3.rotateArbitrary(this.ray.dir, axis, ry));
+        this.ray.dir = Vec3.normalize(Vec3.rotateArbitrary(this.ray.dir, axis, -ry));
         xi = e.layerX;
         yi = e.layerY;
       }

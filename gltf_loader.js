@@ -1,5 +1,9 @@
+/**
+ * A small, mostly useless GLTF loader.
+ */
+
 import * as utils from './utility.js'
-import { Vec3 } from './vector.js';
+import { Vec, Vec3 } from './vector.js';
 
 const INT16 = 5122;
 const UINT16 = 5123;
@@ -14,9 +18,6 @@ const STRIDE = {
 };
 
 const TRIANGLES = 4;
-/**
- * A small, mostly useless GLTF loader.
- */
 const ELEMENT_COUNT = {
   SCALAR: 1,
   VEC2: 2,
@@ -57,7 +58,7 @@ export class GLTFLoader {
     const scene = this.manifest.scenes[this.manifest.scene];
     for (const nodeIdx of scene.nodes) {
       const root = this.nodeDescAt(nodeIdx);
-      this.constructMeshes(root);
+      this._constructMeshes(root, null);
     }
     return new GLTF(this.meshes, this.manifest.asset);
   }
@@ -82,16 +83,33 @@ export class GLTFLoader {
     return this.manifest.materials[i];
   }
 
-  constructMeshes(node) {
+  _constructMeshes(node, parentMatrix) {
+    const m = this._getMatrixForNode(node, parentMatrix);
     if ('mesh' in node) {
       const meshDesc = this.meshDescAt(node.mesh);
-      this.meshes.push(new GLTFMesh(meshDesc, null, this))
+      this.meshes.push(new GLTFMesh(meshDesc, m, this));
     }
     if (node.children) {
       for (const childIdx of node.children) {
         const child = this.nodeDescAt(childIdx);
-        this.constructMeshes(child);
+        this._constructMeshes(child, m);
       }
+    }
+  }
+
+  _getMatrixForNode(node, parentMatrix) {
+    let m = node.matrix;
+    if (!m) {
+      const t = node.translation ?? [0, 0, 0];
+      const r = node.rotation ?? [0, 0, 0, 1];
+      const s = node.scale ?? [1, 1, 1];
+      m = Vec.composeTRSMatrix(t,r,s);
+    }
+
+    if (parentMatrix) {
+      return Vec.matMultiply(parentMatrix, m);
+    } else {
+      return m;
     }
   }
 
@@ -105,6 +123,10 @@ class GLTFMaterial {
     this.id = Math.round(Math.random() * 10000);
     this.desc = desc;
     this.loader = loader;
+  }
+
+  usesMetallicRoughness() {
+    return !!this.desc.pbrMetallicRoughness;
   }
 
   getBaseColor() {
@@ -140,6 +162,10 @@ class GLTFMaterial {
     const idx = this.desc.pbrMetallicRoughness.baseColorTexture.index;
     return this.loader.images[idx];
   }
+
+  usesSpecularGlossiness() {
+    return !!this.desc.extensions?.KHR_materials_pbrSpecularGlossiness;
+  }
 }
 
 class GLTFPrimitive {
@@ -174,7 +200,8 @@ class GLTFPrimitive {
 
   positionAt(i) {
     const accessorIdx = this.desc.attributes.POSITION;
-    return this._getAccessorValueAt(accessorIdx, i);
+    const pos = this._getAccessorValueAt(accessorIdx, i);
+    return Vec.matVecMultiply(this.mesh.matrix, pos);
   }
 
   uvAt(i) {
@@ -188,22 +215,23 @@ class GLTFPrimitive {
 
   normalAt(i) {
     const accessorIdx = this.desc.attributes.NORMAL;
-    if (accessorIdx !== undefined) {
-      return this._getAccessorValueAt(accessorIdx, i);
-    } else {
-      return Vec3.normalize(this.computedNormals[i].n);
-    }
-
+    const norm = accessorIdx !== undefined ? this._getAccessorValueAt(accessorIdx, i) : Vec3.normalize(this.computedNormals[i].n);
+    const mat = Vec.transposeMatrix(Vec.invertMatrix(this.mesh.matrix));
+    return Vec.matVecMultiply(mat, norm);
+    // return norm;
   }
 
   tangentAt(i) {
     const accessorIdx = this.desc.attributes.TANGENT;
+    let tan;
     if (accessorIdx !== undefined) {
-      return this._getAccessorValueAt(accessorIdx, i);
+      tan = this._getAccessorValueAt(accessorIdx, i);
     } else {
       const normal = this.normalAt(i);
-      return Math.abs(normal[2]) < 0.999 ? Vec3.normalize(Vec3.cross(normal, [0, 1, 0])) : [1, 0, 0];
+      tan = Math.abs(normal[2]) < 0.999 ? Vec3.normalize(Vec3.cross(normal, [0, 1, 0])) : [1, 0, 0];
     }
+    const mat = Vec.transposeMatrix(Vec.invertMatrix(this.mesh.matrix));
+    return Vec.matVecMultiply(mat, tan).slice(0, 3);
   }
 
   _addComputedNormal(normal, i) {
@@ -272,9 +300,9 @@ class GLTFPrimitive {
 }
 
 class GLTFMesh {
-  constructor(desc, transform, loader) {
+  constructor(desc, matrix, loader) {
     this.desc = desc;
-    this.transform = transform;
+    this.matrix = matrix;
     this.loader = loader;
     this.primitives = this.desc.primitives.map((p) => {
       return new GLTFPrimitive(p, this);

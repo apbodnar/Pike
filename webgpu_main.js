@@ -67,9 +67,13 @@ async function PathTracer(scene, resolution) {
   }
 
   function onCameraMove(e) {
-    focalDepth = 1 - 1 / raycaster.cast(camera.getCameraRay());
+    focusCamera();
     elements.focalDepth.value = focalDepth;
     samples = 0;
+  }
+
+  function focusCamera() {
+    focalDepth = 1 - 1 / raycaster.cast(camera.getCameraRay());
   }
 
   async function initBVH() {
@@ -405,6 +409,7 @@ async function PathTracer(scene, resolution) {
     await createPipelines();
     await initBVH();
     await initWebGpu();
+    focusCamera();
     console.log("Beginning render");
     tick();
   }

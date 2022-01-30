@@ -100,9 +100,7 @@ class WebGLTextureWriter {
     precision highp float;
     uniform vec2 dims;
     uniform sampler2D tex;
-    
     out vec4 fragColor;
-    
     void main(void) {
       vec2 uv = gl_FragCoord.xy / dims;
       uv.y = uv.y;

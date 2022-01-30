@@ -1,5 +1,5 @@
 import { GLTFLoader } from "./gltf_loader.js";
-import { Vec3 } from './vector.js'
+import { Vec3, Vec } from './vector.js'
 import * as utils from './utility.js'
 import { TexturePacker } from "./texture_packer.js";
 
@@ -46,17 +46,13 @@ export class Scene {
     return { diffMap, metRoughMap, normMap, emitMap: 0 };
   }
 
-  _applyGroupTransform(group,) {
-
-  }
-
   _applyRotations(vert, transforms) {
     transforms.rotate.forEach((r) => { vert = Vec3.rotateArbitrary(vert, r.axis, r.angle) });
     return vert;
   }
 
   _applyVectorTransforms(vert, transforms, rotationOnly = false) {
-    let modelTransformed = Vec3.add(Vec3.scale(this._applyRotations(vert, transforms), rotationOnly ? 1 : transforms.scale), rotationOnly ? [0, 0, 0] : transforms.translate);
+    let modelTransformed = Vec.add(Vec.scale(this._applyRotations(vert, transforms), rotationOnly ? 1 : transforms.scale), rotationOnly ? [0, 0, 0] : transforms.translate);
     return modelTransformed;
   }
 
