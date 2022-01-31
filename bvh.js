@@ -15,7 +15,6 @@ export class BVH {
     this.largestLeaf = 0;
     this.root = this.buildTree([xIndices, yIndices, zIndices], this.depth);
     console.log("Largest leaf:", this.largestLeaf);
-    //const r = this.buildTree2([xIndices, yIndices, zIndices])
   }
 
   _createTriangles(indices, attributes) {

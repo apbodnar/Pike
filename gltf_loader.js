@@ -1,5 +1,5 @@
 /**
- * A small, mostly useless GLTF loader.
+ * A small, mostly useless GLTF loader for baking.
  */
 
 import * as utils from './utility.js'
@@ -103,7 +103,7 @@ export class GLTFLoader {
       const t = node.translation ?? [0, 0, 0];
       const r = node.rotation ?? [0, 0, 0, 1];
       const s = node.scale ?? [1, 1, 1];
-      m = Vec.composeTRSMatrix(t,r,s);
+      m = Vec.composeTRSMatrix(t, r, s);
     }
 
     if (parentMatrix) {
@@ -118,6 +118,48 @@ export class GLTFLoader {
   }
 }
 
+// {
+//   "doubleSided": true,
+//   "extensions": {
+//     "KHR_materials_pbrSpecularGlossiness": {
+//       "diffuseFactor": [
+//         0.8,
+//         0.666667,
+//         0.0,
+//         1.0
+//       ],
+//       "glossinessFactor": 0.0475682846,
+//       "specularFactor": [
+//         0.0,
+//         0.0,
+//         0.0
+//       ]
+//     }
+//   },
+//   "name": "material"
+// },
+
+// "KHR_materials_pbrSpecularGlossiness": {
+//   "diffuseFactor": [
+//     1.0,
+//     1.0,
+//     1.0,
+//     1.0
+//   ],
+//   "diffuseTexture": {
+//     "index": 0
+//   },
+//   "glossinessFactor": 1.0,
+//   "specularFactor": [
+//     1.0,
+//     1.0,
+//     1.0
+//   ],
+//   "specularGlossinessTexture": {
+//     "index": 1
+//   }
+// }
+
 class GLTFMaterial {
   constructor(desc, loader) {
     this.id = Math.round(Math.random() * 10000);
@@ -129,20 +171,16 @@ class GLTFMaterial {
     return !!this.desc.pbrMetallicRoughness;
   }
 
-  getBaseColor() {
-    return this.desc.pbrMetallicRoughness?.baseColorFactor?.slice(0, 3) ?? [0.8, 0.8, 0.8];
-  }
-
-  getMetallicRoughness() {
-    return [0, this.desc.pbrMetallicRoughness?.roughnessFactor ?? 0.3, this.desc.pbrMetallicRoughness?.metallicFactor ?? 0];
-  }
-
   hasNormalTexture() {
     return !!this.desc.normalTexture;
   }
 
   getNormalTexture() {
     return this.loader.images[this.desc.normalTexture.index];
+  }
+
+  getMetallicRoughness() {
+    return [0, this.desc.pbrMetallicRoughness?.roughnessFactor ?? 0.3, this.desc.pbrMetallicRoughness?.metallicFactor ?? 0];
   }
 
   hasMetallicRoughnessTexture() {
@@ -158,6 +196,10 @@ class GLTFMaterial {
     return !!this.desc.pbrMetallicRoughness?.baseColorTexture;
   }
 
+  getBaseColor() {
+    return this.desc.pbrMetallicRoughness?.baseColorFactor?.slice(0, 3) ?? [0.8, 0.8, 0.8];
+  }
+
   getBaseColorTexture() {
     const idx = this.desc.pbrMetallicRoughness.baseColorTexture.index;
     return this.loader.images[idx];
@@ -165,6 +207,33 @@ class GLTFMaterial {
 
   usesSpecularGlossiness() {
     return !!this.desc.extensions?.KHR_materials_pbrSpecularGlossiness;
+  }  
+
+  getSpecularGlossiness() {
+    const spec = this.desc.extensions?.KHR_materials_pbrSpecularGlossiness.specularFactor ?? [1, 1, 1];
+    return [...spec, this.desc.extensions?.KHR_materials_pbrSpecularGlossiness?.glossinessFactor ?? 1];
+  }
+
+  hasSpecularGlossinessTexture() {
+    return !!this.desc.extensions?.KHR_materials_pbrSpecularGlossiness?.specularGlossinessTexture;
+  }
+
+  getSpecularGlossinessTexture() {
+    const idx = this.desc.extensions?.KHR_materials_pbrSpecularGlossiness.specularGlossinessTexture.index;
+    return this.loader.images[idx];
+  }
+
+  getDiffuse() {
+    return this.desc.extensions?.KHR_materials_pbrSpecularGlossiness?.diffuseFactor?.slice(0, 3) ?? [0.8, 0.8, 0.8];
+  }
+
+  hasDiffuseTexture() {
+    return !!this.desc.extensions?.KHR_materials_pbrSpecularGlossiness?.diffuseTexture;
+  }
+
+  getTextureTexture() {
+    const idx = this.desc.extensions?.KHR_materials_pbrSpecularGlossiness?.diffuseTexture.index;
+    return this.loader.images[idx];
   }
 }
 
@@ -231,21 +300,21 @@ class GLTFPrimitive {
       tan = Math.abs(normal[2]) < 0.999 ? Vec3.normalize(Vec3.cross(normal, [0, 1, 0])) : [1, 0, 0];
     }
     const mat = Vec.transposeMatrix(Vec.invertMatrix(this.mesh.matrix));
-    return Vec.matVecMultiply(mat, tan).slice(0, 3);
+    return Vec.matVecMultiply(mat, tan);
   }
 
   _addComputedNormal(normal, i) {
-    const current = Vec3.scale(this.computedNormals[i].n, count);
+    const current = Vec3.scale(this.computedNormals[i].n,  this.computedNormals[i].count);
     this.computedNormals[i].count++;
-    const n = Vec3.scale(Vec3.sum(current, normal), 1 / this.computedNormals[i].count);
+    const n = Vec3.scale(Vec3.add(current, normal), 1 / this.computedNormals[i].count);
     this.computedNormals[i].n = n;
   }
 
   _computeNormals() {
     for (let i = 0; i < this.indexCount(); i += 3) {
-      const p0 = positionAt(i);
-      const p1 = positionAt(i + 1);
-      const p2 = positionAt(i + 2);
+      const p0 = this.positionAt(i);
+      const p1 = this.positionAt(i + 1);
+      const p2 = this.positionAt(i + 2);
       const e0 = Vec3.sub(p1, p0);
       const e1 = Vec3.sub(p2, p0);
       const n = Vec3.cross(e0, e1);

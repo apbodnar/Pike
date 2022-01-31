@@ -104,8 +104,9 @@ export class Scene {
           offset += attrCount;
           for (let i = 0; i < attrCount; i++) {
             const normal = this._applyVectorTransforms(primitive.normalAt(i), group.transforms, true);
-            const tangent = this._applyVectorTransforms(primitive.tangentAt(i).slice(0, 3), group.transforms, true);
-            const bitangent = Vec3.normalize(Vec3.cross(primitive.normalAt(i), primitive.tangentAt(i)));
+            const signedTangent = primitive.tangentAt(i);
+            const tangent = this._applyVectorTransforms(signedTangent.slice(0, 3), group.transforms, true);
+            const bitangent = Vec3.normalize(Vec3.scale(Vec3.cross(primitive.normalAt(i), primitive.tangentAt(i)), signedTangent[3] || 1));
             this.attributes.push({
               pos: this._applyVectorTransforms(primitive.positionAt(i), group.transforms),
               tangent: Vec3.normalize(tangent),
