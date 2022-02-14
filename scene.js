@@ -16,11 +16,15 @@ export class Scene {
     this.groups = await Promise.all(this.desc.props.map((prop) => {
       return new GLTFLoader().load(prop.uri);
     }))
+    const images = [];
     this.groups.forEach((g, i) => {
+      images.push(...g.images);
       g.transforms = this.desc.props[i].transforms;
       g.skipMaterials = new Set(this.desc.props[i].skipMaterials);
       g.skipMeshes = new Set(this.desc.props[i].skipMeshes);
     });
+    this.texturePacker.reserveImages(images);
+    debugger;
     [this.indexCount, this.attributeCount] = this._counts();
     this.attributes = [];
     this.indices = [];
@@ -29,21 +33,30 @@ export class Scene {
     return this;
   }
 
-  getTextureAtlas() {
-
-  }
-
   _createSceneMaterial(material) {
     const diffMap = material.hasBaseColorTexture() ?
       this.texturePacker.addTexture(material.getBaseColorTexture(), true) :
       this.texturePacker.addColor(material.getBaseColor());
+    const diffMapTransform = [1, 1, 0, 0];
     const metRoughMap = material.hasMetallicRoughnessTexture() ?
       this.texturePacker.addTexture(material.getMetallicRoughnessTexture()) :
       this.texturePacker.addColor(material.getMetallicRoughness());
+    const metRoughMapTransform = [1, 1, 0, 0];
     const normMap = material.hasNormalTexture() ?
       this.texturePacker.addTexture(material.getNormalTexture()) :
       this.texturePacker.addColor([0.5, 0.5, 1]);
-    return { diffMap, metRoughMap, normMap, emitMap: 0 };
+    const normMapTransform = [1, 1, 0, 0];
+    const emitMapTransform = [1, 1, 0, 0];
+    return {
+      diffMap,
+      metRoughMap,
+      normMap,
+      emitMap: 0,
+      diffMapTransform,
+      metRoughMapTransform,
+      normMapTransform,
+      emitMapTransform
+    };
   }
 
   _applyRotations(vert, transforms) {
@@ -83,10 +96,8 @@ export class Scene {
               continue;
             }
           }
-          let matId;
-          if (this.materialIds[primitive.material.id] !== undefined) {
-            matId = this.materialIds[primitive.material.id];
-          } else {
+          let matId = this.materialIds[primitive.material.id]
+          if (matId === undefined) {
             matId = this.materials.length;
             this.materialIds[primitive.material.id] = matId;
             this.materials.push(this._createSceneMaterial(primitive.material));
@@ -98,6 +109,7 @@ export class Scene {
               i1: offset + primitive.indexAt(i + 1)[0],
               i2: offset + primitive.indexAt(i + 2)[0],
               matId,
+              debug: { mesh: mesh.desc }
             });
           }
           const attrCount = primitive.attributeCount();

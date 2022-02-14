@@ -133,7 +133,6 @@ export class WGSLPackedStructArray {
   }
 
   push(struct) {
-    //this.view.set(new Uint8Array(struct.toArrayBuffer()), this.offset);
     this._setArrayBuffer(struct);
     this.offset += this.stride;
   }
@@ -233,6 +232,10 @@ export class MaterialIndexStruct extends WGSLPackedStruct {
       { name: "metRoughMap", type: Int32Array, count: 1 },
       { name: "normMap", type: Int32Array, count: 1 },
       { name: "emitMap", type: Int32Array, count: 1 },
+      { name: "diffMapTransform", type: Float32Array, count: 4 },
+      { name: "metRoughMapTransform", type: Float32Array, count: 4 },
+      { name: "normMapTransform", type: Float32Array, count: 4 },
+      { name: "emitMapTransform", type: Float32Array, count: 4 },
     ];
   }
 }

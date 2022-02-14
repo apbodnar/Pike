@@ -6,6 +6,7 @@ export class Raycaster {
 
   constructor(bvh) {
     this.bvh = bvh;
+    this.lastMeshDebug = null;
   }
 
   rayTriangleIntersect(ray, tri) {
@@ -14,6 +15,7 @@ export class Raycaster {
     let e2 = Vec3.sub(tri.verts[2], tri.verts[0]);
     let p = Vec3.cross(ray.dir, e2);
     let det = Vec3.dot(e1, p);
+
     if (det > -epsilon && det < epsilon) {
       return MAX_T
     }
@@ -42,6 +44,7 @@ export class Raycaster {
       let tmp = this.rayTriangleIntersect(ray, tris[i])
       if (tmp < res) {
         res = tmp;
+        this.lastMeshDebug = tris[i].desc.debug;
       }
     }
     return res;
@@ -100,6 +103,7 @@ export class Raycaster {
         closest = Math.min(res, closest);
       }
     }
+    // console.log("DEBUG Mesh:", closest != MAX_T ? this.lastMeshDebug : null);
     return closest;
   }
 

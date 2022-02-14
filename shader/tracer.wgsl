@@ -33,11 +33,20 @@ struct VertexAttributes {
   attributes: array<VertexAttribute>;
 };
 
+struct TextureTransform {
+  scale: vec2<f32>;
+  trans: vec2<f32>;
+}
+
 struct MaterialIndex {
   diffMap: i32;
   metRoughMap: i32;
   normMap: i32;
   emitMap: i32;
+  diffMapTransform: TextureTransform;
+  metRoughMapTransform: TextureTransform;
+  normMapTransform: TextureTransform;
+  emitMapTransform: TextureTransform;
 };
 
 struct MaterialIndices {
@@ -348,6 +357,10 @@ fn createPrimaryRay(gid: vec2<f32>, dims: vec2<f32>) -> Ray {
   return Ray(origin, dir);
 }
 
+fn applyTextureTransform(uv: vec2<f32>, t: TextureTransform) -> vec2<f32> {
+  return uv * t.scale + t.trans;
+}
+
 fn interpolateVertexAttribute(tri: Triangle, bary: vec3<f32>) -> VertexAttribute {
   //var attr: array<VertexAttribute, 3> = attrs.attributes[i];
   return VertexAttribute(
@@ -432,18 +445,19 @@ fn main(
     let tri = triangles.triangles[hit.index];
     var attr = interpolateVertexAttribute(tri, hit.bary);
     let matIdx = materials.indices[tri.matId];
-    let mapNormal = (textureSampleLevel(atlasTex, atlasSampler, attr.uv, matIdx.normMap, 0f).xyz - vec3<f32>(0.5, 0.5, 0.0)) * vec3<f32>(2.0, 2.0, 1.0);
+    let mapNormal = (textureSampleLevel(atlasTex, atlasSampler, applyTextureTransform(attr.uv, matIdx.normMapTransform), matIdx.normMap, 0f).xyz - vec3<f32>(0.5, 0.5, 0.0)) * vec3<f32>(2.0, 2.0, 1.0);
     let normal =  normalize(mat3x3<f32>(attr.tangent, attr.bitangent, attr.normal) * mapNormal);
     // ONB used for computations using the mapped normal;
     let ONB = branchlessONB(normal);
-    let metRough = textureSampleLevel(atlasTex, atlasSampler, attr.uv, matIdx.metRoughMap, 0f).xyz;
-    let diffuse = textureSampleLevel(atlasTex, atlasSampler, attr.uv, matIdx.diffMap, 0f).xyz;
+    let metRough = textureSampleLevel(atlasTex, atlasSampler, applyTextureTransform(attr.uv, matIdx.metRoughMapTransform), matIdx.metRoughMap, 0f).xyz;
+    let diffuse = textureSampleLevel(atlasTex, atlasSampler, applyTextureTransform(attr.uv, matIdx.diffMapTransform), matIdx.diffMap, 0f).xyz;
     let specular = mix(vec3<f32>(1f), diffuse, metRough.b);
     let origin = ray.origin + ray.dir * (hit.t - EPSILON * 40f);
     let a = metRough.g * metRough.g;
     let wo = -ray.dir * ONB;
     let m = sampleGGX(wo, a, a);
-    let f = mix(schlick(max(dot(wo, m), 0f), 1.4), 1f, metRough.b);
+    //vec3 f0 = 0.16 * reflectance * reflectance * (1.0 - metallic) + baseColor * metallic;
+    let f = mix(schlick(max(dot(wo, m), 0f), 1.5), 1f, metRough.b);
     // Sample the environment light
     let envSample = sampleEnv(ONB);
     let envDir = ONB * envSample.wi;

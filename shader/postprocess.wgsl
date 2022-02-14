@@ -34,7 +34,14 @@ fn vert_main(@builtin(vertex_index) VertexIndex : u32) -> VertexOutput {
   return output;
 }
 
-fn fromLinear(color: vec3<f32>) -> vec3<f32> {
+fn linearToSRGB(color: vec3<f32>) -> vec3<f32> {
+    let cutoff: vec3<bool> = color <= vec3<f32>(0.0031308);
+    let higher: vec3<f32> = vec3<f32>(1.055) * pow(color,  vec3<f32>(1.0/2.4)) -  vec3<f32>(0.055);
+    let lower: vec3<f32> = color * vec3<f32>(12.92);
+    return mix(higher, lower, vec3<f32>(cutoff));
+}
+
+fn linearToDisplayP3(color: vec3<f32>) -> vec3<f32> {
     let cutoff: vec3<bool> = color <= vec3<f32>(0.0031308);
     let higher: vec3<f32> = vec3<f32>(1.055) * pow(color,  vec3<f32>(1.0/2.4)) -  vec3<f32>(0.055);
     let lower: vec3<f32> = color * vec3<f32>(12.92);
@@ -70,6 +77,6 @@ fn frag_main(@location(0) fragUV : vec2<f32>) -> @location(0) vec4<f32> {
   let dims : vec2<i32> = textureDimensions(renderResultTex, 0);
   var acc: vec3<f32> = textureLoad(renderResultTex, vec2<i32>( fragUV * vec2<f32>(dims)), 0).rgb;
   acc = ACESFitted(acc * postprocess.exposure);
-  acc = fromLinear(acc);
+  acc = linearToSRGB(acc);
   return vec4<f32>(acc, 1f);
 }

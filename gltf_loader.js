@@ -60,7 +60,7 @@ export class GLTFLoader {
       const root = this.nodeDescAt(nodeIdx);
       this._constructMeshes(root, null);
     }
-    return new GLTF(this.meshes, this.manifest.asset);
+    return new GLTF(this.meshes, this.images, this.manifest.asset);
   }
 
   accessorDescAt(i) {
@@ -118,48 +118,6 @@ export class GLTFLoader {
   }
 }
 
-// {
-//   "doubleSided": true,
-//   "extensions": {
-//     "KHR_materials_pbrSpecularGlossiness": {
-//       "diffuseFactor": [
-//         0.8,
-//         0.666667,
-//         0.0,
-//         1.0
-//       ],
-//       "glossinessFactor": 0.0475682846,
-//       "specularFactor": [
-//         0.0,
-//         0.0,
-//         0.0
-//       ]
-//     }
-//   },
-//   "name": "material"
-// },
-
-// "KHR_materials_pbrSpecularGlossiness": {
-//   "diffuseFactor": [
-//     1.0,
-//     1.0,
-//     1.0,
-//     1.0
-//   ],
-//   "diffuseTexture": {
-//     "index": 0
-//   },
-//   "glossinessFactor": 1.0,
-//   "specularFactor": [
-//     1.0,
-//     1.0,
-//     1.0
-//   ],
-//   "specularGlossinessTexture": {
-//     "index": 1
-//   }
-// }
-
 class GLTFMaterial {
   constructor(desc, loader) {
     this.id = Math.round(Math.random() * 10000);
@@ -180,7 +138,7 @@ class GLTFMaterial {
   }
 
   getMetallicRoughness() {
-    return [0, this.desc.pbrMetallicRoughness?.roughnessFactor ?? 0.3, this.desc.pbrMetallicRoughness?.metallicFactor ?? 0];
+    return [0, this.desc.pbrMetallicRoughness?.roughnessFactor ?? 0, this.desc.pbrMetallicRoughness?.metallicFactor ?? 0];
   }
 
   hasMetallicRoughnessTexture() {
@@ -247,7 +205,7 @@ class GLTFPrimitive {
       this.computedNormals = new Array(this.indexCount()).fill({ n: [0, 0, 0], count: 0 });
       this._computeNormals();
     }
-    console.assert(this.desc.mode === TRIANGLES);
+    console.assert(this.desc.mode === TRIANGLES, "Only support TRIANGLES topology");
   }
 
   indexCount() {
@@ -384,8 +342,9 @@ class GLTFMesh {
 }
 
 export class GLTF {
-  constructor(meshes, asset) {
+  constructor(meshes, images, asset) {
     this.meshes = meshes;
+    this.images = images;
     this.asset = asset;
   }
 }

@@ -197,7 +197,7 @@ async function PathTracer(scene, resolution) {
   }
 
   function createAtlasTetxure() {
-    let atlasRes = scene.texturePacker.setAndGetResolution();
+    let atlasRes = scene.texturePacker.getResolution();
     let pixels = scene.texturePacker.getPixels();
     const extent = {
       width: atlasRes[0],
@@ -253,7 +253,7 @@ async function PathTracer(scene, resolution) {
         Math.ceil(resolution[0] / tileSizeX),
         Math.ceil(resolution[1] / tileSizeY)
       );
-      computePass.endPass();
+      computePass.end();
     }
 
     const params = new PostprocessParamsStruct({ exposure });
@@ -263,7 +263,8 @@ async function PathTracer(scene, resolution) {
       colorAttachments: [
         {
           view: context.getCurrentTexture().createView(),
-          loadValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
+          loadOp: "clear",
+          clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
           storeOp: 'store',
         },
       ],
@@ -271,7 +272,7 @@ async function PathTracer(scene, resolution) {
     passEncoder.setPipeline(postProcessPipeline);
     passEncoder.setBindGroup(0, postProcessBindGroup);
     passEncoder.draw(6, 1, 0, 0);
-    passEncoder.endPass();
+    passEncoder.end();
     device.queue.submit([commandEncoder.finish()]);
     elements.sampleCount.value = samples;
     requestAnimationFrame(tick);
@@ -280,7 +281,8 @@ async function PathTracer(scene, resolution) {
   async function createPipelines() {
     elements.canvasElement.width = resolution[0];
     elements.canvasElement.height = resolution[1];
-    context = elements.canvasElement.getContext('webgpu');
+    //context = elements.canvasElement.getContext('webgpu', { colorSpace: "display-p3" });
+    context = elements.canvasElement.getContext('webgpu', { colorSpace: 'display-p3', pixelFormat: 'float32' });
     const presentationFormat = context.getPreferredFormat(adapter);
     context.configure({
       device,
