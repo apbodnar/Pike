@@ -29,7 +29,7 @@ export class BVH {
     this.depth = Math.max(depth, this.depth);
     let root = new Node(this.triangles, indices);
     root.setSplit();
-    const count = root.indices[root.splitAxis || 0].length;
+    const count = root.indices[root.splitAxis].length;
     if (root.leaf) {
       this._numLeafTris += count;
       this.largestLeaf = Math.max(count, this.largestLeaf);

@@ -3,7 +3,7 @@ import {
   RadianceBinStruct,
   LuminanceBinStruct,
   LuminanceCoordStruct,
-} from './webgpu_utils.js';
+} from './utils.js';
 
 export class EnvironmentGenerator {
   constructor(img) {

@@ -44,6 +44,10 @@ export class Vec {
     return true;
   }
 
+  static copy(v) {
+    return [...v];
+  }
+
   static matMultiply(m1, m2) {
     const res = new Array(4);
     const col = new Array(4);

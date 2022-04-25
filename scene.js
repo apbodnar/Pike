@@ -23,8 +23,7 @@ export class Scene {
       g.skipMaterials = new Set(this.desc.props[i].skipMaterials);
       g.skipMeshes = new Set(this.desc.props[i].skipMeshes);
     });
-    this.texturePacker.reserveImages(images);
-    debugger;
+    //this.texturePacker.reserveImages(images);
     [this.indexCount, this.attributeCount] = this._counts();
     this.attributes = [];
     this.indices = [];
@@ -68,7 +67,7 @@ export class Scene {
     let modelTransformed = Vec.add(Vec.scale(this._applyRotations(vert, transforms), rotationOnly ? 1 : transforms.scale), rotationOnly ? [0, 0, 0] : transforms.translate);
     return modelTransformed;
   }
-
+q
   _counts() {
     let indexCount = 0;
     let attributeCount = 0;
@@ -139,20 +138,4 @@ export class Scene {
       }
     }
   }
-}
-
-export class SceneGeometry {
-  constructor() {
-
-  }
-
-  get indices() {
-
-  }
-
-  get attributes() {
-
-  }
-
-
 }

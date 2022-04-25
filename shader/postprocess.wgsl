@@ -1,13 +1,13 @@
 struct PostprocessParams {
-  exposure: f32;
+  exposure: f32,
 };
 
 @group(0) @binding(0) var renderResultTex: texture_2d<f32>;
 @group(0) @binding(1) var<uniform> postprocess: PostprocessParams;
 
 struct VertexOutput {
-  @builtin(position) Position : vec4<f32>;
-  @location(0) fragUV : vec2<f32>;
+  @builtin(position) Position : vec4<f32>,
+  @location(0) fragUV : vec2<f32>,
 };
 
 @stage(vertex)

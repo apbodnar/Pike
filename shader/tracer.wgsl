@@ -12,101 +12,101 @@ var<private> stack: array<i32, 32>;
 
 // Keep vertex positions separate from other "attributes" to maximize locality during traversal.
 struct Triangle {
-  i1: i32;
-  i2: i32;
-  i3: i32;
-  matId: i32;
+  i1: i32,
+  i2: i32,
+  i3: i32,
+  matId: i32,
 };
 
 struct VertexPositions {
-  pos: array<vec3<f32>>;
+  pos: array<vec3<f32>>,
 };
 
 struct VertexAttribute {
-  tangent: vec3<f32>;
-  bitangent: vec3<f32>;
-  normal: vec3<f32>;
-  uv: vec2<f32>;
+  tangent: vec3<f32>,
+  bitangent: vec3<f32>,
+  normal: vec3<f32>,
+  uv: vec2<f32>,
 };
 
 struct VertexAttributes {
-  attributes: array<VertexAttribute>;
+  attributes: array<VertexAttribute>,
 };
 
 struct TextureTransform {
-  scale: vec2<f32>;
-  trans: vec2<f32>;
+  scale: vec2<f32>,
+  trans: vec2<f32>,
 }
 
 struct MaterialIndex {
-  diffMap: i32;
-  metRoughMap: i32;
-  normMap: i32;
-  emitMap: i32;
-  diffMapTransform: TextureTransform;
-  metRoughMapTransform: TextureTransform;
-  normMapTransform: TextureTransform;
-  emitMapTransform: TextureTransform;
+  diffMap: i32,
+  metRoughMap: i32,
+  normMap: i32,
+  emitMap: i32,
+  diffMapTransform: TextureTransform,
+  metRoughMapTransform: TextureTransform,
+  normMapTransform: TextureTransform,
+  emitMapTransform: TextureTransform,
 };
 
 struct MaterialIndices {
-  indices: array<MaterialIndex>;
+  indices: array<MaterialIndex>,
 };
 
 struct Node {
-  index: i32;
-  left: i32;
-  right: i32;
-  triangles: i32;
-  boxMin: vec3<f32>;
-  boxMax: vec3<f32>;
+  index: i32,
+  left: i32,
+  right: i32,
+  triangles: i32,
+  boxMin: vec3<f32>,
+  boxMax: vec3<f32>,
 };
 
 struct BVH {
-  nodes: array<Node>;
+  nodes: array<Node>,
 };
 
 struct Triangles {
-  triangles: array<Triangle>;
+  triangles: array<Triangle>,
 };
 
 struct Ray {
-  origin: vec3<f32>;
-  dir: vec3<f32>;
+  origin: vec3<f32>,
+  dir: vec3<f32>,
 };
 
 struct Hit {
-  t: f32;
-  index: i32;
-  tests: f32;
-  bary: vec3<f32>;
+  t: f32,
+  index: i32,
+  tests: f32,
+  bary: vec3<f32>,
 };
 
 struct State {
-  eye: Ray;
-  samples: i32;
-  fov: f32;
-  envTheta: f32;
-  focalDepth: f32;
-  apertureSize: f32;
+  eye: Ray,
+  samples: i32,
+  fov: f32,
+  envTheta: f32,
+  focalDepth: f32,
+  apertureSize: f32,
 };
 
 struct LuminanceCoords {
-  coords: array<vec2<i32>>;
+  coords: array<vec2<i32>>,
 };
 
 struct LuminanceBin {
-  h0: i32;
-  h1: i32;
+  h0: i32,
+  h1: i32,
 };
 
 struct LuminanceBins {
-  bins: array<LuminanceBin>;
+  bins: array<LuminanceBin>,
 };
 
 struct Sample {
-  wi: vec3<f32>;
-  pdf: f32;
+  wi: vec3<f32>,
+  pdf: f32,
 };
 
 @group(0) @binding(0) var inputTex : texture_2d<f32>;
@@ -488,11 +488,11 @@ fn main(
     hit = intersectScene(ray, false);
     if (hit.index == NO_HIT_IDX) {
       let weight = powerHeuristic(bsdfSample.pdf, envPdf(dir));
-      color = color + throughput * bsdf * envColor(dir) * weight;
+      color += throughput * bsdf * envColor(dir) * weight;
       break;
     }
-    throughput = throughput * bsdf;
-    bounces = bounces + 1;
+    throughput *= bsdf;
+    bounces += 1;
     if ( bounces > NUM_BOUNCES ) { break; }
   }
   
