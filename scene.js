@@ -11,6 +11,7 @@ export class Scene {
     this.materialIds = {};
     this.texturePacker = new TexturePacker(2048);
   }
+  
   async load(uri) {
     this.desc = await (await fetch(uri)).json();
     this.groups = await Promise.all(this.desc.props.map((prop) => {

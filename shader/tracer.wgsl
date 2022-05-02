@@ -7,6 +7,9 @@ let INV_TAU: f32 = 0.15915494309189535;
 let NUM_BOUNCES: i32 = 5;
 let NO_HIT_IDX: i32 = -1;
 
+override workGroupSizeX: i32;
+override workGroupSizeY: i32;
+
 var<private> seed: u32;
 var<private> stack: array<i32, 32>;
 
@@ -122,7 +125,6 @@ struct Sample {
 @group(1) @binding(7) var pdfTex: texture_2d<f32>;
 @group(1) @binding(8) var<storage, read> envCoords: LuminanceCoords;
 @group(1) @binding(9) var<storage, read> envLuminance: LuminanceBins;
-
 
 @group(2) @binding(0) var<uniform> state: State;
 @group(2) @binding(1) var atlasSampler: sampler;
@@ -333,7 +335,7 @@ fn evalSpecular(wo: vec3<f32>, sample: Sample, au: f32, av: f32) -> f32 {
 
 fn schlick(cosTheta: f32, ior: f32) -> f32 {
     var r0 = (1f - ior) / (1f + ior); // ior = n2/n1
-    r0 = r0 * r0;
+    r0 *= r0;
     let tmp = (1f - cosTheta);
     let tmp2 = tmp * tmp;
     return r0 + (1f - r0) * tmp2 * tmp2 * tmp;
@@ -375,7 +377,7 @@ fn intersectScene(ray: Ray, anyHit: bool) -> Hit {
   var result = Hit(MAX_T, -1, 0f, vec3<f32>());
   var sptr: i32 = 0;
   stack[sptr] = -1;
-  sptr = sptr + 1;
+  sptr += 1;
   var idx: i32 = 0;
   var current: Node;
   loop {
@@ -439,7 +441,7 @@ fn main(
   var hit = intersectScene(ray, false);
   loop {
     if (hit.index == NO_HIT_IDX && bounces == 0) {
-      color = color + throughput * envColor(ray.dir);
+      color = envColor(ray.dir);
       break;
     }
     let tri = triangles.triangles[hit.index];
@@ -466,10 +468,10 @@ fn main(
       if (shadow.index == NO_HIT_IDX) {
         let env = envColor(envDir);
         let lambertWeight = powerHeuristic(envSample.pdf, lambertPdf(envDir, normal));
-        color = color + (1f - f) * throughput * diffuse * evalLambert(envSample) * env * lambertWeight;
+        color += (1f - f) * throughput * diffuse * evalLambert(envSample) * env * lambertWeight;
         let h = normalize(wo + envSample.wi);
         let specWeight = powerHeuristic(envSample.pdf, specularPdf(wo, h, a, a));
-        color = color +  f * throughput * specular * evalSpecular(wo, envSample, a, a) * env * specWeight;
+        color += f * throughput * specular * evalSpecular(wo, envSample, a, a) * env * specWeight;
       }
     }
     // Sample the BSDF
