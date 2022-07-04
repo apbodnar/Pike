@@ -1,11 +1,11 @@
-let EPSILON: f32 = 0.0000001;
-let MAX_T: f32 = 100000.0;
-let M_PI: f32 = 3.141592653589793;
-let M_TAU: f32 = 6.283185307179586;
-let INV_PI: f32 = 0.3183098861837907;
-let INV_TAU: f32 = 0.15915494309189535;
-let NUM_BOUNCES: i32 = 5;
-let NO_HIT_IDX: i32 = -1;
+const EPSILON: f32 = 0.0000001;
+const MAX_T: f32 = 100000.0;
+const M_PI: f32 = 3.141592653589793;
+const M_TAU: f32 = 6.283185307179586;
+const INV_PI: f32 = 0.3183098861837907;
+const INV_TAU: f32 = 0.15915494309189535;
+const NUM_BOUNCES: i32 = 5;
+const NO_HIT_IDX: i32 = -1;
 
 override workGroupSizeX: i32;
 override workGroupSizeY: i32;
@@ -423,7 +423,7 @@ fn intersectScene(ray: Ray, anyHit: bool) -> Hit {
 	return result;
 }
 
-@stage(compute) @workgroup_size(16, 16, 1)
+@compute @workgroup_size(16, 8, 1)
 fn main(
   @builtin(global_invocation_id) GID : vec3<u32>,
 ) {

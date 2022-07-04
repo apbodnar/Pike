@@ -68,7 +68,7 @@ export class Scene {
     let modelTransformed = Vec.add(Vec.scale(this._applyRotations(vert, transforms), rotationOnly ? 1 : transforms.scale), rotationOnly ? [0, 0, 0] : transforms.translate);
     return modelTransformed;
   }
-q
+
   _counts() {
     let indexCount = 0;
     let attributeCount = 0;
