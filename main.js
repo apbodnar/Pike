@@ -2,6 +2,7 @@ import { Scene } from './scene.js'
 import { EnvironmentGenerator } from './env_sampler.js'
 import { BVH } from './bvh.js'
 import { CameraController } from './camera_controller.js'
+import { CameraPass } from './camera_pass.js'
 import { Raycaster } from './raycaster.js'
 import {
   BVHNodeStruct,
@@ -12,6 +13,7 @@ import {
   PostprocessParamsStruct,
   VertexIndexStruct,
   VertexPositionStruct,
+  CameraStateStuct,
 } from './utils.js';
 
 class PikeRenderer {
@@ -243,17 +245,21 @@ class PikeRenderer {
     const commandEncoder = this.device.createCommandEncoder();
     // TODO replace once read+write in storage images is a thing
     for (const bindGroup of this.renderTargetBindGroups) {
-      const state = new RenderStateStruct({
+      const renderState = new RenderStateStruct({
+        samples: this.samples++,
+        envTheta: this.envTheta,
+      });
+      const cameraState = new CameraStateStuct({
         pos: ray.origin,
         dir: ray.dir,
-        samples: this.samples++,
         fov: this.camera.getFov(),
-        envTheta: this.envTheta,
         focalDepth: this.focalDepth,
         apertureSize: this.apertureSize,
       });
-      const source = state.createWGPUBuffer(this.device, GPUBufferUsage.COPY_SRC);
-      commandEncoder.copyBufferToBuffer(source, 0, this.renderStateBuffer, 0, state.size);
+      const renderStateSource = renderState.createWGPUBuffer(this.device, GPUBufferUsage.COPY_SRC);
+      const cameraStateSource = cameraState.createWGPUBuffer(this.device, GPUBufferUsage.COPY_SRC);
+      commandEncoder.copyBufferToBuffer(renderStateSource, 0, this.renderStateBuffer, 0, renderState.size);
+      commandEncoder.copyBufferToBuffer(cameraStateSource, 0, this.cameraStateBuffer, 0, cameraState.size);
       const computePass = commandEncoder.beginComputePass();
       computePass.setPipeline(this.tracerPipeline);
       computePass.setBindGroup(0, bindGroup);
@@ -313,8 +319,8 @@ class PikeRenderer {
         }),
         entryPoint: 'main',
         constants: {
-          workGroupSizeX: 16,
-          workGroupSizeY: 16,
+          workGroupSizeX: 8,
+          workGroupSizeY: 8,
         },
       },
     });
@@ -387,21 +393,31 @@ class PikeRenderer {
       size: RenderStateStruct.getStride(),
       usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.UNIFORM,
     });
+    this.cameraStateBuffer = this.device.createBuffer({
+      size: CameraStateStuct.getStride(),
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.UNIFORM,
+    });
     this.uniformsBindGroup = this.device.createBindGroup({
       layout: this.tracerPipeline.getBindGroupLayout(2),
       entries: [
         {
           binding: 0,
           resource: {
-            buffer: this.renderStateBuffer
+            buffer: this.renderStateBuffer,
           },
         },
         {
           binding: 1,
-          resource: this.createSampler('linear'),
+          resource: {
+            buffer: this.cameraStateBuffer,
+          },
         },
         {
           binding: 2,
+          resource: this.createSampler('linear'),
+        },
+        {
+          binding: 3,
           resource: this.createSampler('nearest'),
         },
       ],
@@ -425,6 +441,8 @@ class PikeRenderer {
         },
       ],
     });
+
+    //this.cameraPass = await CameraPass.create(this.device, this.resolution);
   }
 
   async start() {

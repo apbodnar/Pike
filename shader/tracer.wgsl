@@ -85,13 +85,16 @@ struct Hit {
   bary: vec3<f32>,
 };
 
-struct State {
+struct CameraState {
   eye: Ray,
-  samples: i32,
   fov: f32,
-  envTheta: f32,
   focalDepth: f32,
   apertureSize: f32,
+};
+
+struct RenderState {
+  samples: i32,
+  envTheta: f32,
 };
 
 struct LuminanceCoords {
@@ -126,9 +129,10 @@ struct Sample {
 @group(1) @binding(8) var<storage, read> envCoords: LuminanceCoords;
 @group(1) @binding(9) var<storage, read> envLuminance: LuminanceBins;
 
-@group(2) @binding(0) var<uniform> state: State;
-@group(2) @binding(1) var atlasSampler: sampler;
-@group(2) @binding(2) var envSampler: sampler;
+@group(2) @binding(0) var<uniform> renderState: RenderState;
+@group(2) @binding(1) var<uniform> cameraState: CameraState;
+@group(2) @binding(2) var atlasSampler: sampler;
+@group(2) @binding(3) var envSampler: sampler;
 
 fn hash() -> u32 {
   //Jarzynski and Olano Hash
@@ -205,7 +209,7 @@ fn processLeaf(leaf: Node, ray: Ray, result: ptr<function, Hit>){
 }
 
 fn envColor(dir: vec3<f32>) -> vec3<f32> {
-  let u = state.envTheta + atan2(dir.z, dir.x) / M_TAU;
+  let u = renderState.envTheta + atan2(dir.z, dir.x) / M_TAU;
   let v = acos(dir.y) * INV_PI;
   let c = vec2<f32>(u, v);
   let rgbe = textureSampleLevel(envTex, envSampler, c, 0f);
@@ -214,7 +218,7 @@ fn envColor(dir: vec3<f32>) -> vec3<f32> {
 
 fn envPdf(dir: vec3<f32>) -> f32 {
   let dims = vec2<f32>(textureDimensions(envTex, 0));
-  let u = (1f + state.envTheta + atan2(dir.z, dir.x) / M_TAU) % 1f;
+  let u = (1f + renderState.envTheta + atan2(dir.z, dir.x) / M_TAU) % 1f;
   let v = acos(dir.y) * INV_PI;
   let c = vec2<i32>(vec2<f32>(u, v) * dims);
   let phi = v * M_PI;
@@ -230,7 +234,7 @@ fn sampleEnv(ONB: mat3x3<f32>) -> Sample {
   let bin = envLuminance.bins[idx];
   let coordIdx = i32(hash() % u32(bin.h1 - bin.h0)) + bin.h0;
   let coord = envCoords.coords[coordIdx];
-  let u = -state.envTheta +((0.5 + f32(coord.x)) / dims.x);
+  let u = -renderState.envTheta +((0.5 + f32(coord.x)) / dims.x);
   let v = (0.5 + f32(coord.y)) / dims.y;
   let theta = u * M_TAU;
   let phi = v * M_PI;
@@ -349,13 +353,13 @@ fn powerHeuristic(pdf0: f32, pdf1: f32) -> f32 {
 fn createPrimaryRay(gid: vec2<f32>, dims: vec2<f32>) -> Ray {
   let uv = (2f * ((gid + vec2<f32>(rand(), rand())) / dims) - 1f) * vec2<f32>(dims.x / dims.y, -1f);
   let up = vec3<f32>(0f, 1f, 0f);
-  let basisX: vec3<f32> = normalize(cross(state.eye.dir, up)) * state.fov;
-  let basisY: vec3<f32> = normalize(cross(basisX, state.eye.dir)) * state.fov;
+  let basisX: vec3<f32> = normalize(cross(cameraState.eye.dir, up)) * cameraState.fov;
+  let basisY: vec3<f32> = normalize(cross(basisX, cameraState.eye.dir)) * cameraState.fov;
   let theta = rand() * M_TAU;
-  let dof = (cos(theta) * basisX + sin(theta) * basisY) * state.apertureSize * sqrt(rand());
-  let screen: vec3<f32> = uv.x * basisX + uv.y * basisY + state.eye.dir + state.eye.origin;
-  let dir = normalize((screen + dof * state.focalDepth) - (state.eye.origin + dof));
-  let origin = dof + state.eye.origin;
+  let dof = (cos(theta) * basisX + sin(theta) * basisY) * cameraState.apertureSize * sqrt(rand());
+  let screen: vec3<f32> = uv.x * basisX + uv.y * basisY + cameraState.eye.dir + cameraState.eye.origin;
+  let dir = normalize((screen + dof * cameraState.focalDepth) - (cameraState.eye.origin + dof));
+  let origin = dof + cameraState.eye.origin;
   return Ray(origin, dir);
 }
 
@@ -432,7 +436,7 @@ fn main(
   if (any(gid >= dims)) {
     return;
   }
-  seed = (GID.x * 1973u + GID.y * 9277u + u32(state.samples) * 26699u) | 1u;
+  seed = (GID.x * 1973u + GID.y * 9277u + u32(renderState.samples) * 26699u) | 1u;
   seed = hash();
   var ray = createPrimaryRay(gid, dims);
   var color = vec3<f32>(0f);
@@ -500,6 +504,6 @@ fn main(
   
   // Load the previous color value.
   var acc: vec3<f32> = textureLoad(inputTex, vec2<i32>(GID.xy), 0).rgb;
-  acc = vec3<f32>(max(color, vec3<f32>(0f)) + (acc * f32(state.samples)))/(f32(state.samples + 1));
+  acc = vec3<f32>(max(color, vec3<f32>(0f)) + (acc * f32(renderState.samples)))/(f32(renderState.samples + 1));
   textureStore(outputTex, vec2<i32>(GID.xy), vec4<f32>(max(acc, vec3<f32>()), 1.0));
 }
