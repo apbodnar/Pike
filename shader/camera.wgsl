@@ -1,3 +1,4 @@
+const M_TAU: f32 = 6.283185307179586;
 
 var<private> seed: u32;
 
@@ -27,7 +28,7 @@ struct DeferredRayBuffer {
   elements: array<DeferredRay>,
 }
 
-@group(0) @binding(0) var<storage, write> cameraBuffer: DeferredRayBuffer;
+@group(0) @binding(0) var<storage, read_write> cameraBuffer: DeferredRayBuffer;
 @group(0) @binding(1) var<uniform> dims: vec2<u32>;
 
 @group(1) @binding(0) var<uniform> cameraState: CameraState;
@@ -46,9 +47,9 @@ fn rand() -> f32 {
   return f32(hash()) / 4294967296.0;
 }
 
-
-fn createPrimaryRay(gid: vec2<f32>, dims: vec2<f32>) -> Ray {
-  let uv = (2f * ((gid + vec2<f32>(rand(), rand())) / dims) - 1f) * vec2<f32>(dims.x / dims.y, -1f);
+fn createPrimaryRay(gid: vec2<f32>) -> Ray {
+  let res = vec2<f32>(dims);
+  let uv = (2f * ((gid + vec2<f32>(rand(), rand())) / res) - 1f) * vec2<f32>(res.x / res.y, -1f);
   let up = vec3<f32>(0f, 1f, 0f);
   let basisX: vec3<f32> = normalize(cross(cameraState.eye.dir, up)) * cameraState.fov;
   let basisY: vec3<f32> = normalize(cross(basisX, cameraState.eye.dir)) * cameraState.fov;
@@ -72,15 +73,14 @@ fn main(
   @builtin(global_invocation_id) GID : vec3<u32>,
 ) {
   var cameraRay: DeferredRay;
-  let dims = vec2<f32>(textureDimensions(inputTex, 0));
   if (any(GID.xy >= dims)) {
     return;
   }
   let gid = vec2<f32>(GID.xy);
   seed = (GID.x * 1973u + GID.y * 9277u + u32(renderState.samples) * 26699u) | 1u;
   seed = hash();
-  cameraRay.ray = createPrimaryRay(gid, dims);
-  cameraRay.coordMask = maskCoords(GID);
-  let idx = GID.x + GID.y * dims.y;
-  cameraBuffer[idx] = cameraRay;
+  cameraRay.ray = createPrimaryRay(gid);
+  cameraRay.coordMask = maskCoords(GID.xy);
+  let idx = GID.x + GID.y * dims.x;
+  cameraBuffer.elements[idx] = cameraRay;
 }

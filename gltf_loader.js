@@ -332,8 +332,12 @@ class GLTFMesh {
     this.matrix = matrix;
     this.loader = loader;
     this.primitives = this.desc.primitives.map((p) => {
-      return new GLTFPrimitive(p, this);
-    });
+      try {
+        return new GLTFPrimitive(p, this);
+      } catch {
+        return null;
+      }
+    }).filter(e => e);
   }
 
   getPrimitives() {

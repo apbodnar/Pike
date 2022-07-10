@@ -78,18 +78,20 @@ struct Ray {
   dir: vec3<f32>,
 };
 
+struct DeferredRay {
+  ray: Ray,
+  coordMask: u32,
+};
+
+struct DeferredRayBuffer {
+  elements: array<DeferredRay>,
+}
+
 struct Hit {
   t: f32,
   index: i32,
   tests: f32,
   bary: vec3<f32>,
-};
-
-struct CameraState {
-  eye: Ray,
-  fov: f32,
-  focalDepth: f32,
-  apertureSize: f32,
 };
 
 struct RenderState {
@@ -128,11 +130,13 @@ struct Sample {
 @group(1) @binding(7) var pdfTex: texture_2d<f32>;
 @group(1) @binding(8) var<storage, read> envCoords: LuminanceCoords;
 @group(1) @binding(9) var<storage, read> envLuminance: LuminanceBins;
+@group(1) @binding(10) var atlasSampler: sampler;
+@group(1) @binding(11) var envSampler: sampler;
 
 @group(2) @binding(0) var<uniform> renderState: RenderState;
-@group(2) @binding(1) var<uniform> cameraState: CameraState;
-@group(2) @binding(2) var atlasSampler: sampler;
-@group(2) @binding(3) var envSampler: sampler;
+
+@group(3) @binding(0) var<storage, read_write> cameraBuffer: DeferredRayBuffer;
+@group(3) @binding(1) var<uniform> renderDims: vec2<u32>;
 
 fn hash() -> u32 {
   //Jarzynski and Olano Hash
@@ -204,7 +208,7 @@ fn processLeaf(leaf: Node, ray: Ray, result: ptr<function, Hit>){
       (*result).t = res;
       (*result).bary = bary;
     }
-    i = i + 1;
+    i += 1;
   }
 }
 
@@ -350,19 +354,6 @@ fn powerHeuristic(pdf0: f32, pdf1: f32) -> f32 {
   return (pdf02)/(pdf02 + pdf1 * pdf1);
 }
 
-fn createPrimaryRay(gid: vec2<f32>, dims: vec2<f32>) -> Ray {
-  let uv = (2f * ((gid + vec2<f32>(rand(), rand())) / dims) - 1f) * vec2<f32>(dims.x / dims.y, -1f);
-  let up = vec3<f32>(0f, 1f, 0f);
-  let basisX: vec3<f32> = normalize(cross(cameraState.eye.dir, up)) * cameraState.fov;
-  let basisY: vec3<f32> = normalize(cross(basisX, cameraState.eye.dir)) * cameraState.fov;
-  let theta = rand() * M_TAU;
-  let dof = (cos(theta) * basisX + sin(theta) * basisY) * cameraState.apertureSize * sqrt(rand());
-  let screen: vec3<f32> = uv.x * basisX + uv.y * basisY + cameraState.eye.dir + cameraState.eye.origin;
-  let dir = normalize((screen + dof * cameraState.focalDepth) - (cameraState.eye.origin + dof));
-  let origin = dof + cameraState.eye.origin;
-  return Ray(origin, dir);
-}
-
 fn applyTextureTransform(uv: vec2<f32>, t: TextureTransform) -> vec2<f32> {
   return uv * t.scale + t.trans;
 }
@@ -431,14 +422,15 @@ fn intersectScene(ray: Ray, anyHit: bool) -> Hit {
 fn main(
   @builtin(global_invocation_id) GID : vec3<u32>,
 ) {
-  let dims = vec2<f32>(textureDimensions(inputTex, 0));
-  let gid = vec2<f32>(GID.xy);
-  if (any(gid >= dims)) {
+  if (any(GID.xy >= renderDims)) {
     return;
   }
+  let gid = vec2<f32>(GID.xy);
   seed = (GID.x * 1973u + GID.y * 9277u + u32(renderState.samples) * 26699u) | 1u;
   seed = hash();
-  var ray = createPrimaryRay(gid, dims);
+  var pixIdx = GID.x + GID.y * renderDims.x;
+  var cameraRay = cameraBuffer.elements[pixIdx];
+  var ray = cameraRay.ray;
   var color = vec3<f32>(0f);
   var bounces: i32 = 0;
   var throughput = vec3<f32>(1f);
@@ -503,7 +495,8 @@ fn main(
   }
   
   // Load the previous color value.
-  var acc: vec3<f32> = textureLoad(inputTex, vec2<i32>(GID.xy), 0).rgb;
+  let coord = vec2<i32>(i32(cameraRay.coordMask >> 16u), i32(cameraRay.coordMask & 0x0000ffffu));
+  var acc: vec3<f32> = textureLoad(inputTex, coord, 0).rgb;
   acc = vec3<f32>(max(color, vec3<f32>(0f)) + (acc * f32(renderState.samples)))/(f32(renderState.samples + 1));
-  textureStore(outputTex, vec2<i32>(GID.xy), vec4<f32>(max(acc, vec3<f32>()), 1.0));
+  textureStore(outputTex, coord, vec4<f32>(max(acc, vec3<f32>()), 1.0));
 }

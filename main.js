@@ -16,11 +16,63 @@ import {
   CameraStateStuct,
 } from './utils.js';
 
+class RenderState {
+  constructor(device) {
+    this.device = device;
+    this.samples = 0;
+    this.envTheta = 0;
+
+    this.renderStateBuffer = this.device.createBuffer({
+      size: RenderStateStruct.getStride(),
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.UNIFORM,
+    });
+  }
+
+  incrementSamples() {
+    this.samples++;
+  }
+
+  resetSamples() {
+    this.samples = 0;
+  }
+
+  getSamples() {
+    return this.samples;
+  }
+
+  setEnvRotation(theta) {
+    this.envTheta = theta;
+  }
+
+  createBindGroup(layout) {
+    return this.device.createBindGroup({
+      layout: layout,
+      entries: [
+        {
+          binding: 0,
+          resource: {
+            buffer: this.renderStateBuffer,
+          },
+        },
+      ],
+    });
+  }
+
+  generateCommands(commandEncoder) {
+    const renderState = new RenderStateStruct({
+      samples: this.samples,
+      envTheta: this.envTheta,
+    });
+    const renderStateSource = renderState.createWGPUBuffer(this.device, GPUBufferUsage.COPY_SRC);
+    commandEncoder.copyBufferToBuffer(renderStateSource, 0, this.renderStateBuffer, 0, renderState.size);
+  }
+}
+
 class PikeRenderer {
   constructor(scene, resolution) {
     this.scene = scene;
+    this.renderState = null;
     this.resolution = resolution;
-    this.samples = 0;
     this.lastDraw = 0;
     this.elements = {
       canvasElement: document.getElementById("trace"),
@@ -31,10 +83,9 @@ class PikeRenderer {
       focalDepth: document.getElementById("focal-depth"),
       apertureSize: document.getElementById("aperture-size"),
     };
-    this.envTheta = 0;
     this.elements.thetaElement.addEventListener('input', (e) => {
-      this.envTheta = parseFloat(e.target.value);
-      this.samples = 0;
+      this.renderState.setEnvRotation(parseFloat(e.target.value));
+      this.renderState.resetSamples();
     }, false);
     this.exposure = 1;
     this.elements.exposureElement.addEventListener('input', (e) => {
@@ -43,12 +94,12 @@ class PikeRenderer {
     this.focalDepth = 0.5;
     this.elements.focalDepth.addEventListener('input', (e) => {
       this.focalDepth = parseFloat(e.target.value);
-      this.samples = 0;
+      this.renderState.resetSamples();
     }, false);
     this.apertureSize = 0.02;
     this.elements.apertureSize.addEventListener('input', (e) => {
       this.apertureSize = parseFloat(e.target.value);
-      this.samples = 0;
+      this.renderState.resetSamples();
     }, false);
     this.camera = new CameraController(
       this.elements.canvasElement,
@@ -57,14 +108,15 @@ class PikeRenderer {
         origin: [0, 0, 2]
       },
       () => {
-        this.onCameraMove()
+        this.focusCamera();
+        this.elements.focalDepth.value = this.focalDepth;
+        this.renderState.resetSamples();
       }
     );
     this.raycaster = null;
     this.postProcessBindGroup;
     this.renderTargetBindGroups;
     this.uniformsBindGroup;
-    this.renderStateBuffer;
     this.postprocessParamsBuffer;
     this.storageBindGroup;
     this.tracerPipeline;
@@ -76,12 +128,6 @@ class PikeRenderer {
     // Protect the sign bit?
     let mask = numTris << 24;
     return mask | index;
-  }
-
-  onCameraMove() {
-    this.focusCamera();
-    this.elements.focalDepth.value = this.focalDepth;
-    this.samples = 0;
   }
 
   focusCamera() {
@@ -203,7 +249,14 @@ class PikeRenderer {
             size: luminanceBinBuffer.size,
           },
         },
-
+        {
+          binding: 10,
+          resource: this.createSampler('linear'),
+        },
+        {
+          binding: 11,
+          resource: this.createSampler('nearest'),
+        },
       ],
     });
   }
@@ -234,10 +287,10 @@ class PikeRenderer {
   }
 
   tick() {
-    if (this.samples == 0) {
+    if (this.renderState.getSamples() == 0) {
       this.lastDraw = performance.now();
     }
-    const rate = Math.round(this.samples * 1000 / (performance.now() - this.lastDraw));
+    const rate = Math.round(this.renderState.getSamples() * 1000 / (performance.now() - this.lastDraw));
     this.elements.sampleRateElement.value = rate && rate !== Infinity ? rate : 0;
     const tileSizeX = 16;
     const tileSizeY = 8;
@@ -245,26 +298,23 @@ class PikeRenderer {
     const commandEncoder = this.device.createCommandEncoder();
     // TODO replace once read+write in storage images is a thing
     for (const bindGroup of this.renderTargetBindGroups) {
-      const renderState = new RenderStateStruct({
-        samples: this.samples++,
-        envTheta: this.envTheta,
-      });
-      const cameraState = new CameraStateStuct({
+      this.renderState.generateCommands(commandEncoder);
+      this.renderState.incrementSamples();
+      this.cameraPass.setCameraState({
         pos: ray.origin,
         dir: ray.dir,
         fov: this.camera.getFov(),
         focalDepth: this.focalDepth,
         apertureSize: this.apertureSize,
       });
-      const renderStateSource = renderState.createWGPUBuffer(this.device, GPUBufferUsage.COPY_SRC);
-      const cameraStateSource = cameraState.createWGPUBuffer(this.device, GPUBufferUsage.COPY_SRC);
-      commandEncoder.copyBufferToBuffer(renderStateSource, 0, this.renderStateBuffer, 0, renderState.size);
-      commandEncoder.copyBufferToBuffer(cameraStateSource, 0, this.cameraStateBuffer, 0, cameraState.size);
+      this.cameraPass.generateCommands(commandEncoder);
+
       const computePass = commandEncoder.beginComputePass();
       computePass.setPipeline(this.tracerPipeline);
       computePass.setBindGroup(0, bindGroup);
       computePass.setBindGroup(1, this.storageBindGroup);
-      computePass.setBindGroup(2, this.uniformsBindGroup);
+      computePass.setBindGroup(2, this.renderStateBindGroup);
+      computePass.setBindGroup(3, this.cameraBindGroup);
       computePass.dispatchWorkgroups(
         Math.ceil(this.resolution[0] / tileSizeX),
         Math.ceil(this.resolution[1] / tileSizeY)
@@ -290,7 +340,7 @@ class PikeRenderer {
     passEncoder.draw(6, 1, 0, 0);
     passEncoder.end();
     this.device.queue.submit([commandEncoder.finish()]);
-    this.elements.sampleCount.value = this.samples;
+    this.elements.sampleCount.value = this.renderState.getSamples();
     requestAnimationFrame(() => { this.tick() });
   }
 
@@ -350,6 +400,10 @@ class PikeRenderer {
     });
   }
 
+  createRenderStateBindGroup(layout) {
+
+  }
+
   createSampler(filter) {
     return this.device.createSampler({
       magFilter: filter,
@@ -389,39 +443,11 @@ class PikeRenderer {
         ],
       });
     });
-    this.renderStateBuffer = this.device.createBuffer({
-      size: RenderStateStruct.getStride(),
-      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.UNIFORM,
-    });
-    this.cameraStateBuffer = this.device.createBuffer({
-      size: CameraStateStuct.getStride(),
-      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.UNIFORM,
-    });
-    this.uniformsBindGroup = this.device.createBindGroup({
-      layout: this.tracerPipeline.getBindGroupLayout(2),
-      entries: [
-        {
-          binding: 0,
-          resource: {
-            buffer: this.renderStateBuffer,
-          },
-        },
-        {
-          binding: 1,
-          resource: {
-            buffer: this.cameraStateBuffer,
-          },
-        },
-        {
-          binding: 2,
-          resource: this.createSampler('linear'),
-        },
-        {
-          binding: 3,
-          resource: this.createSampler('nearest'),
-        },
-      ],
-    });
+
+    this.renderState = new RenderState(this.device);
+    this.renderStateBindGroup = this.renderState.createBindGroup(this.tracerPipeline.getBindGroupLayout(2))
+    this.cameraPass = await CameraPass.create(this.device, this.resolution, this.renderState);
+    this.cameraBindGroup = this.cameraPass.createBindGroup(this.tracerPipeline.getBindGroupLayout(3));
     this.postprocessParamsBuffer = this.device.createBuffer({
       size: PostprocessParamsStruct.getStride(),
       usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.UNIFORM,
@@ -442,7 +468,6 @@ class PikeRenderer {
       ],
     });
 
-    //this.cameraPass = await CameraPass.create(this.device, this.resolution);
   }
 
   async start() {
