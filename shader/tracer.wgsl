@@ -6,12 +6,12 @@ const INV_PI: f32 = 0.3183098861837907;
 const INV_TAU: f32 = 0.15915494309189535;
 const NUM_BOUNCES: i32 = 5;
 const NO_HIT_IDX: i32 = -1;
-
-override workGroupSizeX: i32;
-override workGroupSizeY: i32;
+const WORKGROUP_SIZE = 128;
+const SM_STACK_SIZE = 8;
 
 var<private> seed: u32;
-var<private> stack: array<i32, 32>;
+var<private> privateStack: array<i32, 24>;
+var<workgroup> sharedStack: array<array<i32, SM_STACK_SIZE>, WORKGROUP_SIZE>;
 
 // Keep vertex positions separate from other "attributes" to maximize locality during traversal.
 struct Triangle {
@@ -368,11 +368,24 @@ fn interpolateVertexAttribute(tri: Triangle, bary: vec3<f32>) -> VertexAttribute
   );
 }
 
-fn intersectScene(ray: Ray, anyHit: bool) -> Hit {
+fn stackPush(idx: i32, sptr: ptr<function, i32>, tid: u32) {
+  if (*sptr < SM_STACK_SIZE) {
+    sharedStack[tid][*sptr] = idx;
+  } else {
+    privateStack[*sptr - SM_STACK_SIZE] = idx;
+  }
+  *sptr += 1;
+}
+
+fn stackPop(sptr: ptr<function, i32>, tid: u32) -> i32{
+  *sptr -= 1;
+  return select(privateStack[*sptr - SM_STACK_SIZE], sharedStack[tid][*sptr], *sptr < SM_STACK_SIZE);
+}
+
+fn intersectScene(ray: Ray, anyHit: bool, tid: u32) -> Hit {
   var result = Hit(MAX_T, -1, 0f, vec3<f32>());
   var sptr: i32 = 0;
-  stack[sptr] = -1;
-  sptr += 1;
+  stackPush(-1, &sptr, tid);
   var idx: i32 = 0;
   var current: Node;
   loop {
@@ -398,8 +411,7 @@ fn intersectScene(ray: Ray, anyHit: bool) -> Hit {
           idx = leftIndex;
           deferred = rightIndex;
         }
-        stack[sptr] = deferred;
-        sptr = sptr + 1;
+        stackPush(deferred, &sptr, tid);
         continue;
       } else {
         if (leftHit < result.t) {
@@ -412,29 +424,29 @@ fn intersectScene(ray: Ray, anyHit: bool) -> Hit {
         }
       }
     }
-    sptr = sptr - 1;
-		idx = stack[sptr];
+		idx = stackPop(&sptr, tid);
 	}
 	return result;
 }
 
-@compute @workgroup_size(16, 8, 1)
+@compute @workgroup_size(WORKGROUP_SIZE, 1, 1)
 fn main(
+  @builtin(local_invocation_index) LID : u32,
   @builtin(global_invocation_id) GID : vec3<u32>,
 ) {
-  if (any(GID.xy >= renderDims)) {
+  let tid = GID.x;
+  if (tid >= renderDims.x * renderDims.y) {
     return;
   }
-  let gid = vec2<f32>(GID.xy);
-  seed = (GID.x * 1973u + GID.y * 9277u + u32(renderState.samples) * 26699u) | 1u;
-  seed = hash();
-  var pixIdx = GID.x + GID.y * renderDims.x;
-  var cameraRay = cameraBuffer.elements[pixIdx];
+  var cameraRay = cameraBuffer.elements[tid];
   var ray = cameraRay.ray;
+  let coord = vec2<u32>(cameraRay.coordMask >> 16u, cameraRay.coordMask & 0x0000ffffu);
   var color = vec3<f32>(0f);
   var bounces: i32 = 0;
   var throughput = vec3<f32>(1f);
-  var hit = intersectScene(ray, false);
+  var hit = intersectScene(ray, false, LID);
+  seed = (coord.x * 1973u + coord.y * 9277u + u32(renderState.samples) * 26699u) | 1u;
+  seed = hash();
   loop {
     if (hit.index == NO_HIT_IDX && bounces == 0) {
       color = envColor(ray.dir);
@@ -460,7 +472,7 @@ fn main(
     let envSample = sampleEnv(ONB);
     let envDir = ONB * envSample.wi;
     if (dot(envSample.wi, m) > 0f && envSample.wi.z > 0f) {
-      let shadow = intersectScene(Ray(origin, envDir), true);
+      let shadow = intersectScene(Ray(origin, envDir), true, LID);
       if (shadow.index == NO_HIT_IDX) {
         let env = envColor(envDir);
         let lambertWeight = powerHeuristic(envSample.pdf, lambertPdf(envDir, normal));
@@ -483,7 +495,7 @@ fn main(
     
     let dir = ONB * bsdfSample.wi;
     ray = Ray(origin, dir);
-    hit = intersectScene(ray, false);
+    hit = intersectScene(ray, false, LID);
     if (hit.index == NO_HIT_IDX) {
       let weight = powerHeuristic(bsdfSample.pdf, envPdf(dir));
       color += throughput * bsdf * envColor(dir) * weight;
@@ -495,8 +507,7 @@ fn main(
   }
   
   // Load the previous color value.
-  let coord = vec2<i32>(i32(cameraRay.coordMask >> 16u), i32(cameraRay.coordMask & 0x0000ffffu));
-  var acc: vec3<f32> = textureLoad(inputTex, coord, 0).rgb;
+  var acc: vec3<f32> = textureLoad(inputTex, vec2<i32>(coord), 0).rgb;
   acc = vec3<f32>(max(color, vec3<f32>(0f)) + (acc * f32(renderState.samples)))/(f32(renderState.samples + 1));
-  textureStore(outputTex, coord, vec4<f32>(max(acc, vec3<f32>()), 1.0));
+  textureStore(outputTex, vec2<i32>(coord), vec4<f32>(max(acc, vec3<f32>()), 1.0));
 }

@@ -105,8 +105,7 @@ export class CameraPass {
   }
 
   generateCommands(commandEncoder) {
-    const tileSizeX = 16;
-    const tileSizeY = 8;
+    const workGroupSize = 128;
     const cameraStateSource = this.cameraState.createWGPUBuffer(this.device, GPUBufferUsage.COPY_SRC);
     commandEncoder.copyBufferToBuffer(cameraStateSource, 0, this.cameraStateBuffer, 0, this.cameraState.size);
     const computePass = commandEncoder.beginComputePass();
@@ -115,8 +114,8 @@ export class CameraPass {
     computePass.setBindGroup(1, this.cameraStateBindGroup);
     computePass.setBindGroup(2, this.renderStateBindGroup);
     computePass.dispatchWorkgroups(
-      Math.ceil(this.resolution[0] / tileSizeX),
-      Math.ceil(this.resolution[1] / tileSizeY)
+      Math.ceil(this.resolution[0] / 128),
+      Math.ceil(this.resolution[1] / 1),
     );
     computePass.end();
   }

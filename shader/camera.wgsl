@@ -68,7 +68,7 @@ fn maskCoords(coords: vec2<u32>) -> u32 {
   return masked;
 }
 
-@compute @workgroup_size(16, 8, 1)
+@compute @workgroup_size(128, 1, 1)
 fn main(
   @builtin(global_invocation_id) GID : vec3<u32>,
 ) {

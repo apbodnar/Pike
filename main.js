@@ -292,8 +292,7 @@ class PikeRenderer {
     }
     const rate = Math.round(this.renderState.getSamples() * 1000 / (performance.now() - this.lastDraw));
     this.elements.sampleRateElement.value = rate && rate !== Infinity ? rate : 0;
-    const tileSizeX = 16;
-    const tileSizeY = 8;
+    const workGroupSize = 128;
     const ray = this.camera.getCameraRay();
     const commandEncoder = this.device.createCommandEncoder();
     // TODO replace once read+write in storage images is a thing
@@ -316,8 +315,7 @@ class PikeRenderer {
       computePass.setBindGroup(2, this.renderStateBindGroup);
       computePass.setBindGroup(3, this.cameraBindGroup);
       computePass.dispatchWorkgroups(
-        Math.ceil(this.resolution[0] / tileSizeX),
-        Math.ceil(this.resolution[1] / tileSizeY)
+        Math.ceil(this.resolution[1] * this.resolution[0] / workGroupSize),
       );
       computePass.end();
     }
