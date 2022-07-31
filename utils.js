@@ -216,6 +216,9 @@ export class RenderStateStruct extends WGSLPackedStruct {
     return [
       { name: "samples", type: Int32Array, count: 1 },
       { name: "envTheta", type: Float32Array, count: 1},
+      { name: "numHits", type: Uint32Array, count: 1 },
+      { name: "numMisses", type: Uint32Array, count: 1 },
+      { name: "numRays", type: Uint32Array, count: 1 },
     ];
   }
 }
@@ -225,9 +228,12 @@ export class CameraStateStuct extends WGSLPackedStruct {
     return [
       { name: "pos", type: Float32Array, count: 3 },
       { name: "dir", type: Float32Array, count: 3 },
+      { name: "dimsMask", type: Uint32Array, count: 1},
       { name: "fov", type: Float32Array, count: 1 },
       { name: "focalDepth", type: Float32Array, count: 1 },
       { name: "apertureSize", type: Float32Array, count: 1},
+      { name: "distortion", type: Float32Array, count: 1},
+      { name: "bokeh", type: Float32Array, count: 1},
     ];
   }
 }
@@ -280,6 +286,7 @@ export class PostprocessParamsStruct extends WGSLPackedStruct {
   static get desc() {
     return [
       { name: "exposure", type: Float32Array, count: 1 },
+      { name: "saturation", type: Float32Array, count: 1 },
     ];
   }
 }

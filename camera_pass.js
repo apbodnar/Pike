@@ -1,39 +1,125 @@
-import { CameraStateStuct } from "./utils.js";
+import { CameraStateStuct, RenderStateStruct } from "./utils.js";
+
+
+class RenderState {
+  constructor(device, resolution) {
+    this.device = device;
+    this.samples = 0;
+    this.envTheta = 0;
+    this.resolution = resolution;
+    this.renderStateBuffer = this.device.createBuffer({
+      size: RenderStateStruct.getStride() + resolution[0] * resolution[1] * 4 * 4,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
+
+    this.debugBuffer = this.device.createBuffer({
+      size: RenderStateStruct.getStride(),
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+  }
+
+  incrementSamples() {
+    this.samples++;
+  }
+
+  resetSamples() {
+    this.samples = 0;
+  }
+
+  getSamples() {
+    return this.samples;
+  }
+
+  setEnvRotation(theta) {
+    this.envTheta = theta;
+  }
+
+  getRenderStateBuffer() {
+    return this.renderStateBuffer;
+  }
+
+
+  async printDebugInfo() {
+    let commandEncoder = this.device.createCommandEncoder();
+    commandEncoder.copyBufferToBuffer( this.renderStateBuffer, 0, this.debugBuffer, 0, 16);
+    this.device.queue.submit([commandEncoder.finish()]);
+    await this.debugBuffer.mapAsync( GPUMapMode.READ);
+    await this.device.queue.onSubmittedWorkDone();
+    const b = new Uint32Array(this.debugBuffer.getMappedRange());
+    console.log(b);
+    this.debugBuffer.unmap();
+  }
+
+  generateCommands(commandEncoder) {
+    this.clearColorBuffer(commandEncoder);
+    const renderState = new RenderStateStruct({
+      samples: this.samples,
+      envTheta: this.envTheta,
+      numHits: 0,
+      numMisses: 0,
+      numRays: 0,
+    });
+    const renderStateSource = renderState.createWGPUBuffer(this.device, GPUBufferUsage.COPY_SRC);
+    commandEncoder.copyBufferToBuffer(renderStateSource, 0, this.renderStateBuffer, 0, renderState.size);
+  }
+
+  clearNumHitsAndMisses(commandEncoder) {
+    commandEncoder.clearBuffer(this.renderStateBuffer, 8, 8);
+  }
+
+  clearNumRays(commandEncoder) {
+    commandEncoder.clearBuffer(this.renderStateBuffer, 16, 8);
+  }
+
+  clearColorBuffer(commandEncoder) {
+    commandEncoder.clearBuffer(this.renderStateBuffer, 24, this.renderStateBuffer.size - 24);
+  }
+}
 
 export class CameraPass {
-  constructor(device, resolution, renderState) {
+  constructor(device, resolution) {
     this.device = device;
     this.resolution = resolution;
     this.cameraStateBuffer = this.device.createBuffer({
       size: CameraStateStuct.getStride(),
       usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.UNIFORM,
     });
-    this.renderState = renderState;
+    this.renderState = new RenderState(this.device, this.resolution);
     this.cameraBuffer = this.createCameraRayBuffer();
     this.dimensionBuffer = this.createUniformBuffer();
   }
 
+  getRenderState() {
+    return this.renderState;
+  }
+
   createCameraRayBuffer() {
     const db = this.device.createBuffer({
-      size: this.resolution[0] * this.resolution[1] * 12 * 4,
-      usage: GPUBufferUsage.STORAGE,
+      // 256 byte aligned ray count + 48 byte aligned ray buffer * (1 bounce ray + 1 shadow ray)
+      size: this.resolution[0] * this.resolution[1] * 12 * 4 * 2,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
     return db;
   }
 
   createUniformBuffer() {
+    const buffer = new Uint32Array(this.resolution)
     const db = this.device.createBuffer({
-      size: 2 * 4,
+      size: buffer.byteLength,
       mappedAtCreation: true,
       usage: GPUBufferUsage.UNIFORM,
     });
-    const buffer = new Uint32Array(this.resolution)
     new Uint32Array(db.getMappedRange()).set(buffer);
     db.unmap();
     return db;
   }
 
   setCameraState(state) {
+    const buffer = new ArrayBuffer(4);
+    const view = new DataView(buffer, 0);
+    view.setUint16(0, this.resolution[1], true);
+    view.setUint16(2, this.resolution[0], true);
+    state.dimsMask = view.getUint32(0, true);
     this.cameraState = new CameraStateStuct(state);
   }
 
@@ -41,12 +127,11 @@ export class CameraPass {
     return this.bindGroup;
   }
 
-  static async create(device, resolution, renderState) {
-    const instance = new CameraPass(device, resolution, renderState);
+  static async create(...args) {
+    const instance = new CameraPass(...args);
     await instance.createCameraPipeline();
     instance.initBindGroup();
-    instance.createCameraStateBindGroup();
-
+    instance.initCameraStateBindGroup();
     return instance;
   }
 
@@ -61,12 +146,26 @@ export class CameraPass {
         entryPoint: 'main',
       },
     });
-    this.renderStateBindGroup = this.renderState.createBindGroup(this.pipeline.getBindGroupLayout(2))
   }
 
   initBindGroup() {
     this.bindGroup = this.createBindGroup(this.pipeline.getBindGroupLayout(0));
   }
+
+  createRenderStateBindGroup(layout) {
+    return this.device.createBindGroup({
+      layout,
+      entries: [
+        {
+          binding: 0,
+          resource: {
+            buffer: this.renderState.getRenderStateBuffer(),
+          },
+        },
+      ],
+    });
+  }
+
 
   createBindGroup(layout) {
     return this.device.createBindGroup({
@@ -75,24 +174,27 @@ export class CameraPass {
         {
           binding: 0,
           resource: {
-            buffer: this.cameraBuffer,
-            size: this.cameraBuffer.size,
+            buffer: this.renderState.getRenderStateBuffer(),
           },
         },
         {
           binding: 1,
           resource: {
-            buffer: this.dimensionBuffer,
-            size: this.dimensionBuffer.size,
+            buffer: this.cameraBuffer,
+            size: this.cameraBuffer.size,
           },
         },
       ],
     });
   }
 
-  createCameraStateBindGroup() {
-    this.cameraStateBindGroup = this.device.createBindGroup({
-      layout: this.pipeline.getBindGroupLayout(1),
+  initCameraStateBindGroup() {
+    this.cameraStateBindGroup = this.createCameraStateBindGroup(this.pipeline.getBindGroupLayout(1));
+  }
+
+  createCameraStateBindGroup(layout) {
+    return this.device.createBindGroup({
+      layout: layout,
       entries: [
         {
           binding: 0,
@@ -112,9 +214,8 @@ export class CameraPass {
     computePass.setPipeline(this.pipeline);
     computePass.setBindGroup(0, this.bindGroup);
     computePass.setBindGroup(1, this.cameraStateBindGroup);
-    computePass.setBindGroup(2, this.renderStateBindGroup);
     computePass.dispatchWorkgroups(
-      Math.ceil(this.resolution[0] / 128),
+      Math.ceil(this.resolution[0] / workGroupSize),
       Math.ceil(this.resolution[1] / 1),
     );
     computePass.end();
