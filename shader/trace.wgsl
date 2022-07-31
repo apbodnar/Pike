@@ -44,7 +44,7 @@ struct Ray {
 
 struct DeferredRay {
   ray: Ray,
-  coordMask: u32,
+  throughput: vec4<f32>,
 };
 
 struct DeferredRayBuffer {
@@ -54,9 +54,9 @@ struct DeferredRayBuffer {
 struct Hit {
   t: f32,
   index: i32,
-  coordMask: u32,
   bary: vec3<f32>,
-  wo: vec3<f32>,
+  ray: Ray,
+  throughput: vec4<f32>,
 };
 
 struct HitBuffer {
@@ -66,6 +66,8 @@ struct HitBuffer {
 struct RenderState {
   samples: i32,
   envTheta: f32,
+  numHits: u32,
+  numRays: u32,
 };
 
 @group(0) @binding(0) var<storage, read> bvh: BVH;
@@ -74,9 +76,8 @@ struct RenderState {
 @group(1) @binding(1) var<storage, read> vertices: VertexPositions;
 @group(1) @binding(2) var<storage, read_write> hitBuffer: HitBuffer;
 
-@group(2) @binding(0) var<uniform> renderState: RenderState;
-
-@group(3) @binding(0) var<storage, read_write> rayBuffer: DeferredRayBuffer;
+@group(2) @binding(0) var<storage, read_write> renderState: RenderState;
+@group(2) @binding(1) var<storage, read_write> rayBuffer: DeferredRayBuffer;
 
 fn rayBoxIntersect(node: Node, ray: Ray) -> f32 {
   let inverse = 1.0 / ray.dir;
@@ -84,8 +85,8 @@ fn rayBoxIntersect(node: Node, ray: Ray) -> f32 {
   let t2 = (node.boxMax - ray.origin) * inverse;
   let minT = min(t1, t2);
   let maxT = max(t1, t2);
-  let tMax = min(min(maxT.x, maxT.y),maxT.z);
-  let tMin = max(max(minT.x, minT.y),minT.z);
+  let tMax = min(min(maxT.x, maxT.y), maxT.z);
+  let tMin = max(max(minT.x, minT.y), minT.z);
   return select(MAX_T, tMin, tMax >= tMin && tMax > 0.0);
 }
 
@@ -140,27 +141,26 @@ fn stackPop(sptr: ptr<function, i32>, tid: u32) -> i32{
 }
 
 fn intersectScene(ray: Ray, anyHit: bool, tid: u32) -> Hit {
-  var result = Hit(MAX_T, -1, 0f, vec3<f32>());
+  var result = Hit(MAX_T, NO_HIT_IDX, vec3<f32>(), ray, vec4<f32>());
   var sptr: i32 = 0;
-  stackPush(-1, &sptr, tid);
+  stackPush(NO_HIT_IDX, &sptr, tid);
   var idx: i32 = 0;
   var current: Node;
   loop {
-    if (idx <= -1) { break; }
+    if (idx <= NO_HIT_IDX) { break; }
     current = bvh.nodes[idx];
-    result.tests = result.tests + 1f;
     if (current.triangles > -1) {
       processLeaf(current, ray, &result);
       if (anyHit && result.index != NO_HIT_IDX) {
         return result;
       }
     } else {
-      var leftIndex = current.left;
-      var rightIndex = current.right;
-      var leftHit = rayBoxIntersect(bvh.nodes[leftIndex], ray);
-      var rightHit = rayBoxIntersect(bvh.nodes[rightIndex], ray);
+      let leftIndex = current.left;
+      let rightIndex = current.right;
+      let leftHit = rayBoxIntersect(bvh.nodes[leftIndex], ray);
+      let rightHit = rayBoxIntersect(bvh.nodes[rightIndex], ray);
       if (leftHit < result.t && rightHit < result.t) {
-        var deferred: i32 = -1;
+        var deferred: i32;
         if (leftHit > rightHit) {
           idx = rightIndex;
           deferred = leftIndex;
@@ -186,22 +186,21 @@ fn intersectScene(ray: Ray, anyHit: bool, tid: u32) -> Hit {
 	return result;
 }
 
-@compute @workgroup_size(workGroupSize, 1, 1)
+@compute @workgroup_size(WORKGROUP_SIZE, 1, 1)
 fn main(
   @builtin(local_invocation_index) LID : u32,
   @builtin(global_invocation_id) GID : vec3<u32>,
 ) {
   let tid = GID.x;
-  if (tid >= renderDims.x * renderDims.y) {
+  if (tid >= renderState.numRays) {
     return;
   }
-  let gid = vec2<f32>(GID.xy);
-  seed = (GID.x * 1973u + GID.y * 9277u + u32(renderState.samples) * 26699u) | 1u;
-  seed = hash();
-  let pixIdx = GID.x + GID.y * renderDims.x;
-  let deferredRay = rayBuffer.elements[pixIdx];
+  let deferredRay = rayBuffer.elements[tid];
   let ray = deferredRay.ray;
-  let hit = intersectScene(ray, false, LID);
-  hit.coordMask = deferredRay.coordMask;
+  //let anyHit = bool(bitcast<u32>(deferredRay.throughput.w) & 0x00008000u);
+  var hit = intersectScene(ray, false, LID);
+  hit.throughput = deferredRay.throughput;
+  hit.ray = ray;
   hitBuffer.elements[tid] = hit;
+  renderState.numHits = renderState.numRays;
 }

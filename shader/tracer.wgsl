@@ -80,12 +80,12 @@ struct Ray {
 
 struct DeferredRay {
   ray: Ray,
-  coordMask: u32,
+  throughput: vec4<f32>,
 };
 
 struct DeferredRayBuffer {
   elements: array<DeferredRay>,
-}
+};
 
 struct Hit {
   t: f32,
@@ -136,7 +136,7 @@ struct Sample {
 @group(2) @binding(0) var<uniform> renderState: RenderState;
 
 @group(3) @binding(0) var<storage, read_write> cameraBuffer: DeferredRayBuffer;
-@group(3) @binding(1) var<uniform> renderDims: vec2<u32>;
+@group(3) @binding(1) var<storage, read_write> numRays: u32;
 
 fn hash() -> u32 {
   //Jarzynski and Olano Hash
@@ -220,33 +220,33 @@ fn envColor(dir: vec3<f32>) -> vec3<f32> {
   return rgbe.rgb * pow(2.0, rgbe.a * 255.0 - 128.0);
 }
 
-fn envPdf(dir: vec3<f32>) -> f32 {
-  let dims = vec2<f32>(textureDimensions(envTex, 0));
-  let u = (1f + renderState.envTheta + atan2(dir.z, dir.x) / M_TAU) % 1f;
-  let v = acos(dir.y) * INV_PI;
-  let c = vec2<i32>(vec2<f32>(u, v) * dims);
-  let phi = v * M_PI;
-  let sinPhi = sin(phi);
-  return textureLoad(pdfTex, c, 0).r / sinPhi;
-}
+// fn envPdf(dir: vec3<f32>) -> f32 {
+//   let dims = vec2<f32>(textureDimensions(envTex, 0));
+//   let u = (1f + renderState.envTheta + atan2(dir.z, dir.x) / M_TAU) % 1f;
+//   let v = acos(dir.y) * INV_PI;
+//   let c = vec2<i32>(vec2<f32>(u, v) * dims);
+//   let phi = v * M_PI;
+//   let sinPhi = sin(phi);
+//   return textureLoad(pdfTex, c, 0).r / sinPhi;
+// }
 
 // Solid angle formulation; should reduce clumping near high latitudes
-fn sampleEnv(ONB: mat3x3<f32>) -> Sample {
-  let dims = vec2<f32>(textureDimensions(envTex, 0));
-  let numBins = arrayLength(&envLuminance.bins);
-  let idx = i32(hash() % numBins);
-  let bin = envLuminance.bins[idx];
-  let coordIdx = i32(hash() % u32(bin.h1 - bin.h0)) + bin.h0;
-  let coord = envCoords.coords[coordIdx];
-  let u = -renderState.envTheta +((0.5 + f32(coord.x)) / dims.x);
-  let v = (0.5 + f32(coord.y)) / dims.y;
-  let theta = u * M_TAU;
-  let phi = v * M_PI;
-  let sinPhi = sin(phi);
-  let dir = vec3<f32>(cos(theta) * sinPhi, cos(phi), sin(theta) * sinPhi);
-  let pdf = textureLoad(pdfTex, coord, 0).r / sinPhi;
-  return Sample(dir * ONB, pdf);
-}
+// fn sampleEnv(ONB: mat3x3<f32>) -> Sample {
+//   let dims = vec2<f32>(textureDimensions(envTex, 0));
+//   let numBins = arrayLength(&envLuminance.bins);
+//   let idx = i32(hash() % numBins);
+//   let bin = envLuminance.bins[idx];
+//   let coordIdx = i32(hash() % u32(bin.h1 - bin.h0)) + bin.h0;
+//   let coord = envCoords.coords[coordIdx];
+//   let u = -renderState.envTheta +((0.5 + f32(coord.x)) / dims.x);
+//   let v = (0.5 + f32(coord.y)) / dims.y;
+//   let theta = u * M_TAU;
+//   let phi = v * M_PI;
+//   let sinPhi = sin(phi);
+//   let dir = vec3<f32>(cos(theta) * sinPhi, cos(phi), sin(theta) * sinPhi);
+//   let pdf = textureLoad(pdfTex, coord, 0).r / sinPhi;
+//   return Sample(dir * ONB, pdf);
+// }
 
 fn lambertPdf(wi: vec3<f32>, n: vec3<f32>) -> f32 {
   return max(dot(wi, n), EPSILON) * INV_PI;
@@ -383,13 +383,13 @@ fn stackPop(sptr: ptr<function, i32>, tid: u32) -> i32{
 }
 
 fn intersectScene(ray: Ray, anyHit: bool, tid: u32) -> Hit {
-  var result = Hit(MAX_T, -1, 0f, vec3<f32>());
+  var result = Hit(MAX_T, NO_HIT_IDX, 0f, vec3<f32>());
   var sptr: i32 = 0;
-  stackPush(-1, &sptr, tid);
+  stackPush(NO_HIT_IDX, &sptr, tid);
   var idx: i32 = 0;
   var current: Node;
   loop {
-    if (idx <= -1) { break; }
+    if (idx <= NO_HIT_IDX) { break; }
     current = bvh.nodes[idx];
     result.tests = result.tests + 1f;
     if (current.triangles > -1) {
@@ -398,12 +398,12 @@ fn intersectScene(ray: Ray, anyHit: bool, tid: u32) -> Hit {
         return result;
       }
     } else {
-      var leftIndex = current.left;
-      var rightIndex = current.right;
-      var leftHit = rayBoxIntersect(bvh.nodes[leftIndex], ray);
-      var rightHit = rayBoxIntersect(bvh.nodes[rightIndex], ray);
+      let leftIndex = current.left;
+      let rightIndex = current.right;
+      let leftHit = rayBoxIntersect(bvh.nodes[leftIndex], ray);
+      let rightHit = rayBoxIntersect(bvh.nodes[rightIndex], ray);
       if (leftHit < result.t && rightHit < result.t) {
-        var deferred: i32 = -1;
+        var deferred: i32;
         if (leftHit > rightHit) {
           idx = rightIndex;
           deferred = leftIndex;
@@ -435,12 +435,13 @@ fn main(
   @builtin(global_invocation_id) GID : vec3<u32>,
 ) {
   let tid = GID.x;
-  if (tid >= renderDims.x * renderDims.y) {
+  if (tid >= numRays) {
     return;
   }
   var cameraRay = cameraBuffer.elements[tid];
   var ray = cameraRay.ray;
-  let coord = vec2<u32>(cameraRay.coordMask >> 16u, cameraRay.coordMask & 0x0000ffffu);
+  let coordMask = bitcast<u32>(cameraRay.throughput.w);
+  let coord = vec2<u32>(coordMask >> 16u, coordMask & 0x0000ffffu);
   var color = vec3<f32>(0f);
   var bounces: i32 = 0;
   var throughput = vec3<f32>(1f);
