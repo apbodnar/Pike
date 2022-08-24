@@ -5,6 +5,7 @@ import { Raycaster } from './raycaster.js'
 import { TracePass } from './trace_pass.js'
 import { ShadePass } from './shade_pass.js'
 import { PostProcessPass } from './postprocess.js'
+import { AccumulatePass } from './accumulate_pass.js'
 
 class PikeRenderer {
   constructor(scene, resolution) {
@@ -27,7 +28,7 @@ class PikeRenderer {
     }, false);
     this.exposure = 1;
     this.elements.exposureElement.addEventListener('input', (e) => {
-      this.cameraPass.setExposure(parseFloat(e.target.value));
+      this.postProcessPass.setExposure(parseFloat(e.target.value));
     }, false);
     this.focalDepth = 0.5;
     this.elements.focalDepth.addEventListener('input', (e) => {
@@ -66,6 +67,30 @@ class PikeRenderer {
     this.focalDepth = 1 - 1 / this.raycaster.cast(this.camera.getCameraRay());
   }
 
+  async initWebGpu() {
+    this.adapter = await navigator.gpu.requestAdapter();
+    this.device = await this.adapter.requestDevice({
+      requiredLimits: { maxStorageBufferBindingSize: 4294967295 },
+    });
+    this.elements.canvasElement.width = this.resolution[0];
+    this.elements.canvasElement.height = this.resolution[1];
+    this.context = this.elements.canvasElement.getContext('webgpu', { colorSpace: 'display-p3', pixelFormat: 'float32' });
+    const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
+    this.context.configure({
+      device: this.device,
+      format: presentationFormat,
+      alphaMode: "opaque",
+    });
+
+    this.cameraPass = await CameraPass.create(this.device, this.resolution);
+    this.renderState = this.cameraPass.getRenderState();
+    this.tracePass = await TracePass.create(this.device, this.cameraPass, this.scene);
+    this.shadePass = await ShadePass.create(this.device, this.cameraPass, this.tracePass, this.scene);
+    this.accumulatePass = await AccumulatePass.create(this.device, this.resolution, this.renderState);
+    this.postProcessPass = await PostProcessPass.create(this.device, presentationFormat, this.context, this.accumulatePass);
+    this.raycaster = new Raycaster(this.tracePass.getBVH());
+  }
+
   tick() {
     const samples = this.renderState.getSamples();
     if (samples == 0) {
@@ -86,72 +111,15 @@ class PikeRenderer {
       apertureSize: this.apertureSize,
     });
     this.cameraPass.generateCommands(commandEncoder);
-    
-    for (let i=0; i < 3; i++) {
+    for (let i = 0; i < 2; i++) {
       this.tracePass.generateCommands(commandEncoder);
-      this.shadePass.setRenderTargetIndex(i % 2);
       this.shadePass.generateCommands(commandEncoder);
     };
-
-    this.postProcessPass.setTextureIndex(samples % 2);
+    this.accumulatePass.generateCommands(commandEncoder);
     this.postProcessPass.generateCommands(commandEncoder);
     this.device.queue.submit([commandEncoder.finish()]);
     this.elements.sampleCount.value = this.renderState.getSamples();
     requestAnimationFrame(() => { this.tick() });
-  }
-
-  async initWebGpu() {
-    this.adapter = await navigator.gpu.requestAdapter();
-    this.device = await this.adapter.requestDevice({
-      
-      requiredLimits: {maxStorageBufferBindingSize: 4294967295},
-    });
-    this.elements.canvasElement.width = this.resolution[0];
-    this.elements.canvasElement.height = this.resolution[1];
-    this.context = this.elements.canvasElement.getContext('webgpu', { colorSpace: 'display-p3', pixelFormat: 'float32' });
-    const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
-    this.context.configure({
-      device: this.device,
-      format: presentationFormat,
-      alphaMode: "opaque",
-    });
-    const renderTextures = [0, 1].map(() => {
-      return this.device.createTexture({
-        size: {
-          width: this.resolution[0],
-          height: this.resolution[1],
-        },
-        format: 'rgba32float',
-        usage:
-          GPUTextureUsage.COPY_DST |
-          GPUTextureUsage.STORAGE_BINDING |
-          GPUTextureUsage.TEXTURE_BINDING,
-      });
-    });
-
-    const compositeTexture = this.device.createTexture({
-      size: {
-        width: this.resolution[0],
-        height: this.resolution[1],
-      },
-      format: 'rgba32float',
-      usage:
-        GPUTextureUsage.COPY_DST |
-        GPUTextureUsage.STORAGE_BINDING |
-        GPUTextureUsage.TEXTURE_BINDING,
-    });
-
-    this.cameraPass = await CameraPass.create(this.device, this.resolution);
-    this.renderState = this.cameraPass.getRenderState();
-    this.tracePass = await TracePass.create(this.device, this.cameraPass, this.scene);
-    this.shadePass = await ShadePass.create(this.device, renderTextures, this.cameraPass, this.tracePass, this.scene);
-    this.postProcessPass = await PostProcessPass.create(
-      this.device,
-      presentationFormat,
-      renderTextures,
-      this.context,
-    );
-    this.raycaster = new Raycaster(this.tracePass.getBVH());
   }
 
   async start() {

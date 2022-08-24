@@ -7,9 +7,8 @@ import {
 import { EnvironmentGenerator } from './env_sampler.js'
 
 export class ShadePass {
-  constructor(device, renderTextures, cameraPass, tracePass, scene) {
+  constructor(device, cameraPass, tracePass, scene) {
     this.device = device;
-    this.renderTextures = renderTextures;
     this.cameraPass = cameraPass;
     this.tracePass = tracePass;
     this.scene = scene;
@@ -22,17 +21,17 @@ export class ShadePass {
   }
 
   initCollisionBindGroup() {
-    this.collisionBindGroup = this.tracePass.createCollisionBindGroup2(this.pipeline.getBindGroupLayout(3));
+    this.collisionBindGroup = this.tracePass.createCollisionBindGroup2(this.pipeline.getBindGroupLayout(2));
   }
 
   initRayStateBindGroup() {
-    this.rayStateBindGroup = this.cameraPass.createBindGroup(this.pipeline.getBindGroupLayout(2));
+    this.rayStateBindGroup = this.cameraPass.createBindGroup(this.pipeline.getBindGroupLayout(1));
   }
 
-  static async create(device, renderTextures, cameraPass, tracePass, scene) {
-    const instance = new ShadePass(device, renderTextures, cameraPass, tracePass, scene);
+  static async create(...args) {
+    const instance = new ShadePass(...args);
     await instance.initPipeline();
-    instance.initRenderTargetBindGroups();
+    //instance.initRenderTargetBindGroups();
     await instance.initShadingBindGroup();
     instance.initRayStateBindGroup();
     instance.initCollisionBindGroup();
@@ -86,24 +85,6 @@ export class ShadePass {
     });
   }
 
-  initRenderTargetBindGroups() {
-    this.renderTargetBindGroups = [0, 1].map((i) => {
-      return this.device.createBindGroup({
-        layout: this.pipeline.getBindGroupLayout(0),
-        entries: [
-          {
-            binding: 0,
-            resource: this.renderTextures[i].createView(),
-          },
-          {
-            binding: 1,
-            resource: this.renderTextures[(i + 1) % 2].createView(),
-          }
-        ],
-      });
-    });
-  }
-
   async initShadingBindGroup() {
     const materialsBuffer = new WGSLPackedStructArray(MaterialIndexStruct, this.scene.materials.length);
     for (const mat of this.scene.materials) {
@@ -120,7 +101,7 @@ export class ShadePass {
     const luminanceCoordBuffer = envGenerator.createEnvCoordBuffer();
     const pdfTexture = envGenerator.createPdfTexture(this.device);
     this.shadingBindGroup = this.device.createBindGroup({
-      layout: this.pipeline.getBindGroupLayout(1),
+      layout: this.pipeline.getBindGroupLayout(0),
       label: "shading bind group",
       entries: [
         {
@@ -180,10 +161,10 @@ export class ShadePass {
     this.cameraPass.getRenderState().clearNumRays(commandEncoder);
     const computePass = commandEncoder.beginComputePass();
     computePass.setPipeline(this.pipeline);
-    computePass.setBindGroup(0, this.renderTargetBindGroups[this.currentTargetIdx]);
-    computePass.setBindGroup(1, this.shadingBindGroup);
-    computePass.setBindGroup(2, this.rayStateBindGroup);
-    computePass.setBindGroup(3, this.collisionBindGroup);
+    //computePass.setBindGroup(0, this.renderTargetBindGroups[this.currentTargetIdx]);
+    computePass.setBindGroup(0, this.shadingBindGroup);
+    computePass.setBindGroup(1, this.rayStateBindGroup);
+    computePass.setBindGroup(2, this.collisionBindGroup);
     const numWorkgroups = Math.ceil(this.cameraPass.resolution[0] * this.cameraPass.resolution[1] / workGroupSize);
     computePass.dispatchWorkgroups(numWorkgroups);
     computePass.end();

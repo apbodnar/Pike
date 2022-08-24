@@ -2,13 +2,13 @@ import { CameraStateStuct, RenderStateStruct } from "./utils.js";
 
 
 class RenderState {
-  constructor(device) {
+  constructor(device, resolution) {
     this.device = device;
     this.samples = 0;
     this.envTheta = 0;
-
+    this.resolution = resolution;
     this.renderStateBuffer = this.device.createBuffer({
-      size: RenderStateStruct.getStride(),
+      size: RenderStateStruct.getStride() + resolution[0] * resolution[1] * 4 * 4,
       usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE,
     });
   }
@@ -34,6 +34,7 @@ class RenderState {
   }
 
   generateCommands(commandEncoder) {
+    this.clearColorBuffer(commandEncoder);
     const renderState = new RenderStateStruct({
       samples: this.samples,
       envTheta: this.envTheta,
@@ -45,25 +46,15 @@ class RenderState {
   }
 
   clearNumHits(commandEncoder) {
-    const renderState = new RenderStateStruct({
-      samples: this.samples,
-      envTheta: this.envTheta,
-      numHits: 0,
-      numRays: 0,
-    });
-    const renderStateSource = renderState.createWGPUBuffer(this.device, GPUBufferUsage.COPY_SRC);
-    commandEncoder.copyBufferToBuffer(renderStateSource, 8, this.renderStateBuffer, 8, 4);
+    commandEncoder.clearBuffer(this.renderStateBuffer, 8, 4);
   }
 
   clearNumRays(commandEncoder) {
-    const renderState = new RenderStateStruct({
-      samples: this.samples,
-      envTheta: this.envTheta,
-      numHits: 0,
-      numRays: 0,
-    });
-    const renderStateSource = renderState.createWGPUBuffer(this.device, GPUBufferUsage.COPY_SRC);
-    commandEncoder.copyBufferToBuffer(renderStateSource, 12, this.renderStateBuffer, 12, 4);
+    commandEncoder.clearBuffer(this.renderStateBuffer, 12, 4);
+  }
+
+  clearColorBuffer(commandEncoder) {
+    commandEncoder.clearBuffer(this.renderStateBuffer, 16, this.renderStateBuffer.size - 16);
   }
 }
 
@@ -75,10 +66,9 @@ export class CameraPass {
       size: CameraStateStuct.getStride(),
       usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.UNIFORM,
     });
-    this.renderState = new RenderState(this.device);
+    this.renderState = new RenderState(this.device, this.resolution);
     this.cameraBuffer = this.createCameraRayBuffer();
     this.dimensionBuffer = this.createUniformBuffer();
-    this.zeroBuffer = this.createZeroBuffer();
   }
 
   getRenderState() {
@@ -106,18 +96,6 @@ export class CameraPass {
     return db;
   }
 
-  createZeroBuffer() {
-    const buffer = new Uint32Array([0]);
-    const db = this.device.createBuffer({
-      size: buffer.byteLength,
-      mappedAtCreation: true,
-      usage: GPUBufferUsage.COPY_SRC,
-    });
-    new Uint32Array(db.getMappedRange()).set(buffer);
-    db.unmap();
-    return db;
-  }
-
   setCameraState(state) {
     const buffer = new ArrayBuffer(4);
     const view = new DataView(buffer, 0);
@@ -131,11 +109,11 @@ export class CameraPass {
     return this.bindGroup;
   }
 
-  static async create(device, resolution) {
-    const instance = new CameraPass(device, resolution);
+  static async create(...args) {
+    const instance = new CameraPass(...args);
     await instance.createCameraPipeline();
     instance.initBindGroup();
-    instance.createCameraStateBindGroup();
+    instance.initCameraStateBindGroup();
     return instance;
   }
 
@@ -177,9 +155,13 @@ export class CameraPass {
     });
   }
 
-  createCameraStateBindGroup() {
-    this.cameraStateBindGroup = this.device.createBindGroup({
-      layout: this.pipeline.getBindGroupLayout(1),
+  initCameraStateBindGroup() {
+    this.cameraStateBindGroup = this.createCameraStateBindGroup(this.pipeline.getBindGroupLayout(1));
+  }
+
+  createCameraStateBindGroup(layout) {
+    return this.device.createBindGroup({
+      layout: layout,
       entries: [
         {
           binding: 0,
@@ -195,8 +177,6 @@ export class CameraPass {
     const workGroupSize = 128;
     const cameraStateSource = this.cameraState.createWGPUBuffer(this.device, GPUBufferUsage.COPY_SRC);
     commandEncoder.copyBufferToBuffer(cameraStateSource, 0, this.cameraStateBuffer, 0, this.cameraState.size);
-    //this.renderState.clearNumRays(commandEncoder);
-    //commandEncoder.copyBufferToBuffer(this.zeroBuffer, 0, this.cameraBuffer, 0, 4);
     const computePass = commandEncoder.beginComputePass();
     computePass.setPipeline(this.pipeline);
     computePass.setBindGroup(0, this.bindGroup);

@@ -86,6 +86,8 @@ struct RenderState {
   envTheta: f32,
   numHits: u32,
   numRays: atomic<u32>,
+  // Refactor once R/W storage textures exists
+  colorBuffer: array<vec4<f32>>,
 };
 
 struct LuminanceCoords {
@@ -106,24 +108,21 @@ struct Sample {
   pdf: f32,
 };
 
-@group(0) @binding(0) var inputTex : texture_2d<f32>;
-@group(0) @binding(1) var outputTex : texture_storage_2d<rgba32float, write>;
+@group(0) @binding(0) var<storage, read> attrs: VertexAttributes;
+@group(0) @binding(1) var<storage, read> materials: MaterialIndices;
+@group(0) @binding(2) var atlasTex: texture_2d_array<f32>;
+@group(0) @binding(3) var envTex: texture_2d<f32>;
+@group(0) @binding(4) var pdfTex: texture_2d<f32>;
+@group(0) @binding(5) var<storage, read> envCoords: LuminanceCoords;
+@group(0) @binding(6) var<storage, read> envLuminance: LuminanceBins;
+@group(0) @binding(7) var atlasSampler: sampler;
+@group(0) @binding(8) var envSampler: sampler;
 
-@group(1) @binding(0) var<storage, read> attrs: VertexAttributes;
-@group(1) @binding(1) var<storage, read> materials: MaterialIndices;
-@group(1) @binding(2) var atlasTex: texture_2d_array<f32>;
-@group(1) @binding(3) var envTex: texture_2d<f32>;
-@group(1) @binding(4) var pdfTex: texture_2d<f32>;
-@group(1) @binding(5) var<storage, read> envCoords: LuminanceCoords;
-@group(1) @binding(6) var<storage, read> envLuminance: LuminanceBins;
-@group(1) @binding(7) var atlasSampler: sampler;
-@group(1) @binding(8) var envSampler: sampler;
+@group(1) @binding(0) var<storage, read_write> renderState: RenderState;
+@group(1) @binding(1) var<storage, read_write> rayBuffer: DeferredRayBuffer;
 
-@group(2) @binding(0) var<storage, read_write> renderState: RenderState;
-@group(2) @binding(1) var<storage, read_write> rayBuffer: DeferredRayBuffer;
-
-@group(3) @binding(0) var<storage, read> triangles: Triangles;
-@group(3) @binding(1) var<storage, read_write> hitBuffer: HitBuffer;
+@group(2) @binding(0) var<storage, read> triangles: Triangles;
+@group(2) @binding(1) var<storage, read_write> hitBuffer: HitBuffer;
 
 fn hash() -> u32 {
   //Jarzynski and Olano Hash
@@ -314,7 +313,6 @@ fn emitDeferredRay(deferredRay: DeferredRay) {
 
 @compute @workgroup_size(WORKGROUP_SIZE, 1, 1)
 fn main(
-  @builtin(local_invocation_index) LID : u32,
   @builtin(global_invocation_id) GID : vec3<u32>,
 ) {
   let tid = GID.x;
@@ -323,20 +321,17 @@ fn main(
   }
   let hit = hitBuffer.elements[tid];
   let ray = hit.ray;
-  let coordMask = bitcast<u32>(hit.throughput.w);
-  //let shadow = bool(coordMask & 0x00008000u);
-  let coord = vec2<u32>(coordMask >> 16u, coordMask & 0x0000ffffu);
+  let samples = u32(renderState.samples) & 0x0fffffffu;
+  let colorIdx = bitcast<u32>(hit.throughput.w);
+  //let shadow = bool(coordMask & 0x00008000au);
   var color = vec3<f32>(0f);
   var throughput = hit.throughput.rgb;
-  seed = (coord.x * 1973u + coord.y * 9277u + u32(renderState.samples) * 26699u) | 1u;
+  seed = (GID.x * 1973u + colorIdx * 9277u + samples * 26699u) | 1u;
   seed = hash();
 
   if (hit.index == NO_HIT_IDX) {
     color = envColor(ray.dir) * throughput;
-    // Load the previous color value.
-    var acc: vec3<f32> = textureLoad(inputTex, vec2<i32>(coord), 0).rgb;
-    acc = vec3<f32>(max(color, vec3<f32>(0f)) + (acc * f32(renderState.samples)))/(f32(renderState.samples + 1));
-    textureStore(outputTex, vec2<i32>(coord), vec4<f32>(max(acc, vec3<f32>()), 1.0));
+    renderState.colorBuffer[colorIdx] += vec4<f32>(color, 1.0);
     return;
   }
   
@@ -351,20 +346,9 @@ fn main(
   let normal =  normalize(mat3x3<f32>(attr.tangent, attr.bitangent, attr.normal) * mapNormal);
   // ONB used for computations using the mapped normal;
   
-  var acc: vec3<f32> = textureLoad(inputTex, vec2<i32>(coord), 0).rgb;
-  acc = vec3<f32>(max(normal, vec3<f32>(0f)) + (acc * f32(renderState.samples)))/(f32(renderState.samples + 1));
-  textureStore(outputTex, vec2<i32>(coord), vec4<f32>(max(acc, vec3<f32>()), 1.0));
-  return;
   let ONB = branchlessONB(normal);
 
   let origin = ray.origin + ray.dir * (hit.t - EPSILON * 40f);
-  var bsdfSample = sampleLambert();
-  let dir = ONB * bsdfSample.wi;
-  let bounceRay = Ray(origin, dir);
-  let bounceThroughput = vec4<f32>(normal * throughput, hit.throughput.w);
-  let deferredBounceRay = DeferredRay(bounceRay, bounceThroughput);
-  emitDeferredRay(deferredBounceRay);
-  return;
 
   let metRough = textureSampleLevel(atlasTex, atlasSampler, applyTextureTransform(attr.uv, matIdx.metRoughMapTransform), matIdx.metRoughMap, 0f).xyz;
   let diffuse = textureSampleLevel(atlasTex, atlasSampler, applyTextureTransform(attr.uv, matIdx.diffMapTransform), matIdx.diffMap, 0f).xyz;
@@ -376,7 +360,7 @@ fn main(
   let f = mix(schlick(max(dot(wo, m), 0f), 1.5), 1f, metRough.b);
 
   // Sample the BSDF
-  //var bsdfSample: Sample;
+  var bsdfSample: Sample;
   var bsdf: vec3<f32>;
   if (rand() > f) {
     bsdfSample = sampleLambert();
@@ -385,7 +369,7 @@ fn main(
     bsdfSample = sampleSpecular(wo, m, a, a);
     bsdf = specular * evalSpecular(wo, bsdfSample, a, a);
   }
-
+  
   if (bsdfSample.wi.z > 0f) {
     let dir = ONB * bsdfSample.wi;
     let bounceRay = Ray(origin, dir);

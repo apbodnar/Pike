@@ -1,12 +1,11 @@
 import { PostprocessParamsStruct } from "./utils.js";
 
 export class PostProcessPass {
-  constructor(device, presentationFormat, textures, context) {
+  constructor(device, presentationFormat, context, accumulatePass) {
     this.device = device;
     this.presentationFormat = presentationFormat;
-    this.currentTargetIdx = -1;
-    this.textures = textures;
     this.context = context;
+    this.accumulatePass = accumulatePass;
     this.exposure = 1.0;
     this.postprocessParamsBuffer =
       new PostprocessParamsStruct({ exposure: this.exposure })
@@ -17,28 +16,22 @@ export class PostProcessPass {
     this.exposure = exposure;
   }
 
-  setTextureIndex(i) {
-    this.currentTargetIdx = i;
-  }
-
   initBindGroups() {
-    this.postProcessBindGroups = [0, 1].map((i) => {
-      return this.device.createBindGroup({
-        label: `pingpong bind group ${i}`,
-        layout: this.pipeline.getBindGroupLayout(0),
-        entries: [
-          {
-            binding: 0,
-            resource: this.textures[i].createView(),
+    this.postProcessBindGroup = this.device.createBindGroup({
+      label: `pingpong bind group`,
+      layout: this.pipeline.getBindGroupLayout(0),
+      entries: [
+        {
+          binding: 0,
+          resource: {
+            buffer: this.postprocessParamsBuffer
           },
-          {
-            binding: 1,
-            resource: {
-              buffer: this.postprocessParamsBuffer
-            },
-          },
-        ],
-      });
+        },
+        {
+          binding: 1,
+          resource: this.accumulatePass.getAccumulateTexture().createView(),
+        },
+      ],
     });
   }
 
@@ -91,7 +84,7 @@ export class PostProcessPass {
       ],
     });
     passEncoder.setPipeline(this.pipeline);
-    passEncoder.setBindGroup(0, this.postProcessBindGroups[this.currentTargetIdx]);
+    passEncoder.setBindGroup(0, this.postProcessBindGroup);
     passEncoder.draw(6, 1, 0, 0);
     passEncoder.end();
   }

@@ -15,6 +15,8 @@ struct RenderState {
   envTheta: f32,
   numHits: atomic<u32>,
   numRays: atomic<u32>,
+  // Refactor once R/W storage textures exists
+  colorBuffer: array<vec4<f32>>,
 };
 
 struct Ray {
@@ -35,8 +37,6 @@ struct DeferredRayBuffer {
 @group(0) @binding(1) var<storage, read_write> cameraBuffer: DeferredRayBuffer;
 
 @group(1) @binding(0) var<uniform> cameraState: CameraState;
-
-
 
 fn hash() -> u32 {
   //Jarzynski and Olano Hash
@@ -63,12 +63,6 @@ fn createPrimaryRay(gid: vec2<f32>, res: vec2<f32>) -> Ray {
   return Ray(origin, dir);
 }
 
-fn maskCoords(coords: vec2<u32>) -> f32 {
-  var masked = 0u;
-  masked = masked | coords.x << 16;
-  masked = masked | coords.y;
-  return bitcast<f32>(masked);
-}
 
 @compute @workgroup_size(128, 1, 1)
 fn main(
@@ -82,9 +76,9 @@ fn main(
   let gid = vec2<f32>(GID.xy);
   seed = (GID.x * 1973u + GID.y * 9277u + u32(renderState.samples) * 26699u) | 1u;
   seed = hash();
-  cameraRay.ray = createPrimaryRay(gid, vec2<f32>(dims));
-  cameraRay.throughput = vec4<f32>(vec3<f32>(1f), maskCoords(GID.xy));
   let idx = GID.x + GID.y * dims.x;
+  cameraRay.ray = createPrimaryRay(gid, vec2<f32>(dims));
+  cameraRay.throughput = vec4<f32>(vec3<f32>(1f), bitcast<f32>(idx));
   cameraBuffer.elements[idx] = cameraRay;
   atomicAdd(&renderState.numRays, 1);
 }

@@ -2,12 +2,11 @@ struct PostprocessParams {
   exposure: f32,
 };
 
-@group(0) @binding(0) var renderResultTex: texture_2d<f32>;
-@group(0) @binding(1) var<uniform> postprocess: PostprocessParams;
+@group(0) @binding(0) var<uniform> postprocess: PostprocessParams;
+@group(0) @binding(1) var accumulateTex : texture_2d<f32>;
 
 struct VertexOutput {
   @builtin(position) Position : vec4<f32>,
-  @location(0) fragUV : vec2<f32>,
 };
 
 @vertex
@@ -30,7 +29,6 @@ fn vert_main(@builtin(vertex_index) VertexIndex : u32) -> VertexOutput {
 
   var output : VertexOutput;
   output.Position = vec4<f32>(pos[VertexIndex], 0.0, 1.0);
-  output.fragUV = uv[VertexIndex];
   return output;
 }
 
@@ -73,9 +71,9 @@ fn ACESFitted(in: vec3<f32>) -> vec3<f32> {
 }
 
 @fragment
-fn frag_main(@location(0) fragUV : vec2<f32>) -> @location(0) vec4<f32> {
-  let dims : vec2<i32> = textureDimensions(renderResultTex, 0);
-  var acc: vec3<f32> = textureLoad(renderResultTex, vec2<i32>( fragUV * vec2<f32>(dims)), 0).rgb;
+fn frag_main(@builtin(position) FragCoord : vec4<f32>) -> @location(0) vec4<f32> {
+  let coord = vec2<i32>(FragCoord.xy);
+  var acc: vec3<f32> = textureLoad(accumulateTex, vec2<i32>(coord), 0).rgb;
   acc = ACESFitted(acc * postprocess.exposure);
   acc = linearToSRGB(acc);
   return vec4<f32>(acc, 1f);
