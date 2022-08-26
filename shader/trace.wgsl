@@ -196,10 +196,12 @@ fn main(
     return;
   }
   let deferredRay = rayBuffer.elements[tid];
+    let colorIdx = bitcast<u32>(deferredRay.throughput.w);
+
   let ray = deferredRay.ray;
   //let anyHit = bool(bitcast<u32>(deferredRay.throughput.w) & 0x00008000u);
   var hit = intersectScene(ray, false, LID);
-  hit.throughput = deferredRay.throughput;
+  hit.throughput = vec4<f32>(deferredRay.throughput.rgb, bitcast<f32>(colorIdx));
   hit.ray = ray;
   hitBuffer.elements[tid] = hit;
   renderState.numHits = renderState.numRays;

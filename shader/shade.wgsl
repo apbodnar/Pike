@@ -331,6 +331,7 @@ fn main(
 
   if (hit.index == NO_HIT_IDX) {
     color = envColor(ray.dir) * throughput;
+    color = vec3<f32>(0.5);
     renderState.colorBuffer[colorIdx] += vec4<f32>(color, 1.0);
     return;
   }
@@ -373,7 +374,7 @@ fn main(
   if (bsdfSample.wi.z > 0f) {
     let dir = ONB * bsdfSample.wi;
     let bounceRay = Ray(origin, dir);
-    let bounceThroughput = vec4<f32>(bsdf * throughput, hit.throughput.w);
+    let bounceThroughput = vec4<f32>(bsdf * throughput, bitcast<f32>(colorIdx));
     let deferredBounceRay = DeferredRay(bounceRay, bounceThroughput);
     emitDeferredRay(deferredBounceRay);
   }

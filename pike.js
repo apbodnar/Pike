@@ -111,7 +111,7 @@ class PikeRenderer {
       apertureSize: this.apertureSize,
     });
     this.cameraPass.generateCommands(commandEncoder);
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < 5; i++) {
       this.tracePass.generateCommands(commandEncoder);
       this.shadePass.generateCommands(commandEncoder);
     };
