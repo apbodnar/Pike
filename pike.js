@@ -91,7 +91,7 @@ class PikeRenderer {
     this.raycaster = new Raycaster(this.tracePass.getBVH());
   }
 
-  tick() {
+  async tick() {
     const samples = this.renderState.getSamples();
     if (samples == 0) {
       this.lastDraw = performance.now();
@@ -99,9 +99,12 @@ class PikeRenderer {
     const rate = Math.round(samples * 1000 / (performance.now() - this.lastDraw));
     this.elements.sampleRateElement.value = rate && rate !== Infinity ? rate : 0;
     const ray = this.camera.getCameraRay();
-    const commandEncoder = this.device.createCommandEncoder();
-    // TODO replace once read+write in storage images is a thing
+
+    let commandEncoder = this.device.createCommandEncoder();
     this.renderState.generateCommands(commandEncoder);
+    this.device.queue.submit([commandEncoder.finish()]);
+
+    commandEncoder = this.device.createCommandEncoder();
     this.renderState.incrementSamples();
     this.cameraPass.setCameraState({
       pos: ray.origin,
@@ -111,10 +114,17 @@ class PikeRenderer {
       apertureSize: this.apertureSize,
     });
     this.cameraPass.generateCommands(commandEncoder);
+    this.device.queue.submit([commandEncoder.finish()]);
+
     for (let i = 0; i < 5; i++) {
+      commandEncoder = this.device.createCommandEncoder();
       this.tracePass.generateCommands(commandEncoder);
       this.shadePass.generateCommands(commandEncoder);
+      this.device.queue.submit([commandEncoder.finish()]);
+      //await this.renderState.printDebugInfo();
     };
+
+    commandEncoder = this.device.createCommandEncoder();
     this.accumulatePass.generateCommands(commandEncoder);
     this.postProcessPass.generateCommands(commandEncoder);
     this.device.queue.submit([commandEncoder.finish()]);

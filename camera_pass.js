@@ -9,7 +9,12 @@ class RenderState {
     this.resolution = resolution;
     this.renderStateBuffer = this.device.createBuffer({
       size: RenderStateStruct.getStride() + resolution[0] * resolution[1] * 4 * 4,
-      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
+
+    this.debugBuffer = this.device.createBuffer({
+      size: RenderStateStruct.getStride(),
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
     });
   }
 
@@ -31,6 +36,18 @@ class RenderState {
 
   getRenderStateBuffer() {
     return this.renderStateBuffer;
+  }
+
+
+  async printDebugInfo() {
+    let commandEncoder = this.device.createCommandEncoder();
+    commandEncoder.copyBufferToBuffer( this.renderStateBuffer, 0, this.debugBuffer, 0, 16);
+    this.device.queue.submit([commandEncoder.finish()]);
+    await this.debugBuffer.mapAsync( GPUMapMode.READ);
+    await this.device.queue.onSubmittedWorkDone();
+    const b = new Uint32Array(this.debugBuffer.getMappedRange());
+    console.log(b);
+    this.debugBuffer.unmap();
   }
 
   generateCommands(commandEncoder) {

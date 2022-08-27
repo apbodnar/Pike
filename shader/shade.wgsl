@@ -307,8 +307,9 @@ fn interpolateVertexAttribute(tri: Triangle, bary: vec3<f32>) -> VertexAttribute
 }
 
 fn emitDeferredRay(deferredRay: DeferredRay) {
-  rayBuffer.elements[atomicLoad(&renderState.numRays)] = deferredRay;
-  atomicAdd(&renderState.numRays, 1);
+  let idx = atomicAdd(&renderState.numRays, 1);
+  rayBuffer.elements[idx] = deferredRay;
+  
 }
 
 @compute @workgroup_size(WORKGROUP_SIZE, 1, 1)

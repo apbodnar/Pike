@@ -49,7 +49,7 @@ struct DeferredRay {
 
 struct DeferredRayBuffer {
   elements: array<DeferredRay>,
-}
+};
 
 struct Hit {
   t: f32,
@@ -59,14 +59,18 @@ struct Hit {
   throughput: vec4<f32>,
 };
 
+struct MissBuffer {
+  elements: array<Ray>,
+};
+
 struct HitBuffer {
   elements: array<Hit>,
-}
+};
 
 struct RenderState {
   samples: i32,
   envTheta: f32,
-  numHits: u32,
+  numHits: atomic<u32>,
   numRays: u32,
 };
 
@@ -203,6 +207,8 @@ fn main(
   var hit = intersectScene(ray, false, LID);
   hit.throughput = vec4<f32>(deferredRay.throughput.rgb, bitcast<f32>(colorIdx));
   hit.ray = ray;
-  hitBuffer.elements[tid] = hit;
-  renderState.numHits = renderState.numRays;
+  let idx = atomicAdd(&renderState.numHits, 1);
+  hitBuffer.elements[idx] = hit;
+  //hitBuffer.elements[tid] = hit;
+  //atomicAdd(&renderState.numHits, 1);//= renderState.numRays;
 }
