@@ -217,6 +217,7 @@ export class RenderStateStruct extends WGSLPackedStruct {
       { name: "samples", type: Int32Array, count: 1 },
       { name: "envTheta", type: Float32Array, count: 1},
       { name: "numHits", type: Uint32Array, count: 1 },
+      { name: "numMisses", type: Uint32Array, count: 1 },
       { name: "numRays", type: Uint32Array, count: 1 },
     ];
   }

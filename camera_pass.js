@@ -56,22 +56,23 @@ class RenderState {
       samples: this.samples,
       envTheta: this.envTheta,
       numHits: 0,
+      numMisses: 0,
       numRays: 0,
     });
     const renderStateSource = renderState.createWGPUBuffer(this.device, GPUBufferUsage.COPY_SRC);
     commandEncoder.copyBufferToBuffer(renderStateSource, 0, this.renderStateBuffer, 0, renderState.size);
   }
 
-  clearNumHits(commandEncoder) {
-    commandEncoder.clearBuffer(this.renderStateBuffer, 8, 4);
+  clearNumHitsAndMisses(commandEncoder) {
+    commandEncoder.clearBuffer(this.renderStateBuffer, 8, 8);
   }
 
   clearNumRays(commandEncoder) {
-    commandEncoder.clearBuffer(this.renderStateBuffer, 12, 4);
+    commandEncoder.clearBuffer(this.renderStateBuffer, 16, 4);
   }
 
   clearColorBuffer(commandEncoder) {
-    commandEncoder.clearBuffer(this.renderStateBuffer, 16, this.renderStateBuffer.size - 16);
+    commandEncoder.clearBuffer(this.renderStateBuffer, 20, this.renderStateBuffer.size - 20);
   }
 }
 
@@ -94,8 +95,8 @@ export class CameraPass {
 
   createCameraRayBuffer() {
     const db = this.device.createBuffer({
-      // 256 byte aligned ray count + 48 byte aligned ray buffer * (1 bounce ray + 1 shadow ray) 
-      size: this.resolution[0] * this.resolution[1] * 12 * 4 * 2,
+      // 256 byte aligned ray count + 48 byte aligned ray buffer * (1 bounce ray)
+      size: this.resolution[0] * this.resolution[1] * 12 * 4,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
     return db;
@@ -150,6 +151,21 @@ export class CameraPass {
   initBindGroup() {
     this.bindGroup = this.createBindGroup(this.pipeline.getBindGroupLayout(0));
   }
+
+  createRenderStateBindGroup(layout) {
+    return this.device.createBindGroup({
+      layout,
+      entries: [
+        {
+          binding: 0,
+          resource: {
+            buffer: this.renderState.getRenderStateBuffer(),
+          },
+        },
+      ],
+    });
+  }
+
 
   createBindGroup(layout) {
     return this.device.createBindGroup({

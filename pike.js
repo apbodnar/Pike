@@ -3,9 +3,11 @@ import { CameraController } from './camera_controller.js'
 import { CameraPass } from './camera_pass.js'
 import { Raycaster } from './raycaster.js'
 import { TracePass } from './trace_pass.js'
-import { ShadePass } from './shade_pass.js'
+import { ShadeHitPass } from './shade_hit_pass.js'
 import { PostProcessPass } from './postprocess.js'
 import { AccumulatePass } from './accumulate_pass.js'
+import { ShadeMissPass } from './shade_miss_pass.js'
+import { EnvironmentGenerator } from './env_sampler.js'
 
 class PikeRenderer {
   constructor(scene, resolution) {
@@ -44,7 +46,7 @@ class PikeRenderer {
       this.elements.canvasElement,
       {
         dir: [0, 0, -1],
-        origin: [0, 0, 2]
+        origin: [0, 0, 2],
       },
       () => {
         this.focusCamera();
@@ -82,10 +84,12 @@ class PikeRenderer {
       alphaMode: "opaque",
     });
 
+    const envGenerator = new EnvironmentGenerator(this.scene.env);
     this.cameraPass = await CameraPass.create(this.device, this.resolution);
     this.renderState = this.cameraPass.getRenderState();
     this.tracePass = await TracePass.create(this.device, this.cameraPass, this.scene);
-    this.shadePass = await ShadePass.create(this.device, this.cameraPass, this.tracePass, this.scene);
+    this.shadePass = await ShadeHitPass.create(this.device, this.cameraPass, this.tracePass, this.scene, envGenerator);
+    this.shadeMissPass = await ShadeMissPass.create(this.device, this.cameraPass, this.tracePass, envGenerator);
     this.accumulatePass = await AccumulatePass.create(this.device, this.resolution, this.renderState);
     this.postProcessPass = await PostProcessPass.create(this.device, presentationFormat, this.context, this.accumulatePass);
     this.raycaster = new Raycaster(this.tracePass.getBVH());
@@ -120,6 +124,7 @@ class PikeRenderer {
       commandEncoder = this.device.createCommandEncoder();
       this.tracePass.generateCommands(commandEncoder);
       this.shadePass.generateCommands(commandEncoder);
+      this.shadeMissPass.generateCommands(commandEncoder);
       this.device.queue.submit([commandEncoder.finish()]);
       //await this.renderState.printDebugInfo();
     };

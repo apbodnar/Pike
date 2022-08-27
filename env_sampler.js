@@ -118,6 +118,18 @@ export class EnvironmentGenerator {
     return luminanceCoordBuffer
   }
 
+  createEnvResBuffer(device) {
+    const buffer = new Uint32Array([this.img.width, this.img.height]);
+    const db = device.createBuffer({
+      size: buffer.byteLength,
+      mappedAtCreation: true,
+      usage: GPUBufferUsage.UNIFORM,
+    });
+    new Uint32Array(db.getMappedRange()).set(buffer);
+    db.unmap();
+    return db;
+  }
+
   createPdfTexture(device) {
     const pdfBuffer = new Float32Array(this.uvMap.length);
     for (const bin of this.luminanceHist) {

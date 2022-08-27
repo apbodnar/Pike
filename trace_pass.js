@@ -13,6 +13,7 @@ export class TracePass {
     this.scene = scene;
     this.initBVHBuffer();
     this.initHitBuffer();
+    this.initMissBuffer();
   }
 
   initBVHBindGroup() {
@@ -34,6 +35,14 @@ export class TracePass {
     this.hitBuffer = this.device.createBuffer({
       // 80 byte aligned hit buffer
       size: this.cameraPass.resolution[0] * this.cameraPass.resolution[1] * 20 * 4 * 2,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+  }
+
+  initMissBuffer() {
+    this.missBuffer = this.device.createBuffer({
+      // 256 byte aligned ray count + 48 byte aligned ray buffer * (1 bounce ray) 
+      size: this.cameraPass.resolution[0] * this.cameraPass.resolution[1] * 12 * 4,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
   }
@@ -69,6 +78,13 @@ export class TracePass {
             size: this.hitBuffer.size,
           },
         },
+        {
+          binding: 3,
+          resource: {
+            buffer: this.missBuffer,
+            size: this.missBuffer.size,
+          },
+        },
       ],
     });
   }
@@ -76,7 +92,7 @@ export class TracePass {
   createCollisionBindGroup2(layout) {
     return this.device.createBindGroup({
       layout,
-      label: `collision bind group`,
+      label: `collision bind group 2`,
       entries: [
         {
           binding: 0,
@@ -90,6 +106,22 @@ export class TracePass {
           resource: {
             buffer: this.hitBuffer,
             size: this.hitBuffer.size,
+          },
+        },
+      ],
+    });
+  }
+
+  createCollisionBindGroup3(layout) {
+    return this.device.createBindGroup({
+      layout,
+      label: `collision bind group 3`,
+      entries: [
+        {
+          binding: 0,
+          resource: {
+            buffer: this.missBuffer,
+            size: this.missBuffer.size,
           },
         },
       ],
@@ -175,7 +207,7 @@ export class TracePass {
 
   generateCommands(commandEncoder) {
     const workGroupSize = 128;
-    this.cameraPass.getRenderState().clearNumHits(commandEncoder);
+    this.cameraPass.getRenderState().clearNumHitsAndMisses(commandEncoder);
     const computePass = commandEncoder.beginComputePass();
     computePass.setPipeline(this.pipeline);
     computePass.setBindGroup(0, this.bvhBindGroup);

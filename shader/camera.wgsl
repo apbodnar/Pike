@@ -13,7 +13,8 @@ struct CameraState {
 struct RenderState {
   samples: i32,
   envTheta: f32,
-  numHits: atomic<u32>,
+  numHits: u32,
+  numMisses: u32,
   numRays: atomic<u32>,
   // Refactor once R/W storage textures exists
   colorBuffer: array<vec4<f32>>,

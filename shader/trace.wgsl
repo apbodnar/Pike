@@ -59,10 +59,6 @@ struct Hit {
   throughput: vec4<f32>,
 };
 
-struct MissBuffer {
-  elements: array<Ray>,
-};
-
 struct HitBuffer {
   elements: array<Hit>,
 };
@@ -71,6 +67,7 @@ struct RenderState {
   samples: i32,
   envTheta: f32,
   numHits: atomic<u32>,
+  numMisses: atomic<u32>,
   numRays: u32,
 };
 
@@ -79,6 +76,7 @@ struct RenderState {
 @group(1) @binding(0) var<storage, read> triangles: Triangles;
 @group(1) @binding(1) var<storage, read> vertices: VertexPositions;
 @group(1) @binding(2) var<storage, read_write> hitBuffer: HitBuffer;
+@group(1) @binding(3) var<storage, read_write> missBuffer: DeferredRayBuffer;
 
 @group(2) @binding(0) var<storage, read_write> renderState: RenderState;
 @group(2) @binding(1) var<storage, read_write> rayBuffer: DeferredRayBuffer;
@@ -121,7 +119,7 @@ fn processLeaf(leaf: Node, ray: Ray, result: ptr<function, Hit>){
     var bary = vec3<f32>();
     let tri: Triangle = triangles.triangles[baseIdx + i];
     let res: f32 = rayTriangleIntersect(ray, tri, &bary);
-    if(res < (*result).t){
+    if (res < (*result).t) {
       (*result).index = baseIdx + i;
       (*result).t = res;
       (*result).bary = bary;
@@ -200,15 +198,17 @@ fn main(
     return;
   }
   let deferredRay = rayBuffer.elements[tid];
-    let colorIdx = bitcast<u32>(deferredRay.throughput.w);
-
+  let colorIdx = bitcast<u32>(deferredRay.throughput.w);
   let ray = deferredRay.ray;
   //let anyHit = bool(bitcast<u32>(deferredRay.throughput.w) & 0x00008000u);
   var hit = intersectScene(ray, false, LID);
-  hit.throughput = vec4<f32>(deferredRay.throughput.rgb, bitcast<f32>(colorIdx));
-  hit.ray = ray;
-  let idx = atomicAdd(&renderState.numHits, 1);
-  hitBuffer.elements[idx] = hit;
-  //hitBuffer.elements[tid] = hit;
-  //atomicAdd(&renderState.numHits, 1);//= renderState.numRays;
+  if (hit.index != NO_HIT_IDX) {
+    hit.throughput = vec4<f32>(deferredRay.throughput.rgb, bitcast<f32>(colorIdx));
+    hit.ray = ray;
+    let idx = atomicAdd(&renderState.numHits, 1);
+    hitBuffer.elements[idx] = hit;
+  } else {
+    let idx = atomicAdd(&renderState.numMisses, 1);
+    missBuffer.elements[idx] = deferredRay;
+  }
 }
