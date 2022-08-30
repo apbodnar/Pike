@@ -66,17 +66,17 @@ struct HitBuffer {
 struct RenderState {
   samples: i32,
   envTheta: f32,
-  numHits: atomic<u32>,
+  numHits: u32,
   numMisses: atomic<u32>,
   numRays: u32,
+  numShadowRays: u32,
 };
 
 @group(0) @binding(0) var<storage, read> bvh: BVH;
 
 @group(1) @binding(0) var<storage, read> triangles: Triangles;
 @group(1) @binding(1) var<storage, read> vertices: VertexPositions;
-@group(1) @binding(2) var<storage, read_write> hitBuffer: HitBuffer;
-@group(1) @binding(3) var<storage, read_write> missBuffer: DeferredRayBuffer;
+@group(1) @binding(2) var<storage, read_write> missBuffer: DeferredRayBuffer;
 
 @group(2) @binding(0) var<storage, read_write> renderState: RenderState;
 @group(2) @binding(1) var<storage, read_write> rayBuffer: DeferredRayBuffer;
@@ -194,10 +194,11 @@ fn main(
   @builtin(global_invocation_id) GID : vec3<u32>,
 ) {
   let tid = GID.x;
-  if (tid >= renderState.numRays) {
+  if (tid >= renderState.numShadowRays) {
     return;
   }
-  let deferredRay = rayBuffer.elements[tid];
+  let offset = arrayLength(&rayBuffer.elements) / 2;
+  let deferredRay = rayBuffer.elements[tid + offset];
   let ray = deferredRay.ray;
   var hit = intersectScene(ray, LID);
   if (hit.index == NO_HIT_IDX) {

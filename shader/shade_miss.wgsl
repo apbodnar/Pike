@@ -53,6 +53,5 @@ fn main(
   let deferredRay = missBuffer.elements[tid];
   let colorIdx = bitcast<u32>(deferredRay.throughput.w);
   var color = envColor(deferredRay.ray.dir) * deferredRay.throughput.rgb;
-  color = vec3<f32>(2) * deferredRay.throughput.rgb;
   renderState.colorBuffer[colorIdx] += vec4<f32>(color, 1.0);
 }

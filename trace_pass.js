@@ -17,8 +17,12 @@ export class TracePass {
   }
 
   initBVHBindGroup() {
-    this.bvhBindGroup = this.device.createBindGroup({
-      layout: this.pipeline.getBindGroupLayout(0),
+    this.bvhBindGroup = this.createBVHBindGroup(this.pipeline.getBindGroupLayout(0));
+  }
+
+  createBVHBindGroup(layout) {
+    return this.device.createBindGroup({
+      layout: layout,
       entries: [
         {
           binding: 0,
@@ -41,8 +45,8 @@ export class TracePass {
 
   initMissBuffer() {
     this.missBuffer = this.device.createBuffer({
-      // 256 byte aligned ray count + 48 byte aligned ray buffer * (1 bounce ray) 
-      size: this.cameraPass.resolution[0] * this.cameraPass.resolution[1] * 12 * 4,
+      // 256 byte aligned ray count + 48 byte aligned ray buffer * (1 bounce ray + 1 shadow ray) 
+      size: this.cameraPass.resolution[0] * this.cameraPass.resolution[1] * 12 * 4 * 2,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
   }
@@ -119,6 +123,36 @@ export class TracePass {
       entries: [
         {
           binding: 0,
+          resource: {
+            buffer: this.missBuffer,
+            size: this.missBuffer.size,
+          },
+        },
+      ],
+    });
+  }
+
+  createCollisionBindGroup4(layout) {
+    return this.device.createBindGroup({
+      layout,
+      label: `collision bind group`,
+      entries: [
+        {
+          binding: 0,
+          resource: {
+            buffer: this.triangleBuffer,
+            size: this.triangleBuffer.size,
+          },
+        },
+        {
+          binding: 1,
+          resource: {
+            buffer: this.vertexBuffer,
+            size: this.vertexBuffer.size,
+          },
+        },
+        {
+          binding: 2,
           resource: {
             buffer: this.missBuffer,
             size: this.missBuffer.size,

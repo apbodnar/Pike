@@ -8,6 +8,7 @@ import { PostProcessPass } from './postprocess.js'
 import { AccumulatePass } from './accumulate_pass.js'
 import { ShadeMissPass } from './shade_miss_pass.js'
 import { EnvironmentGenerator } from './env_sampler.js'
+import { TraceShadowPass } from './trace_shadow_pass.js'
 
 class PikeRenderer {
   constructor(scene, resolution) {
@@ -90,6 +91,7 @@ class PikeRenderer {
     this.renderState = this.cameraPass.getRenderState();
     this.tracePass = await TracePass.create(this.device, this.cameraPass, this.scene);
     this.shadePass = await ShadeHitPass.create(this.device, this.cameraPass, this.tracePass, this.scene, envGenerator);
+    this.traceShadowPass = await TraceShadowPass.create(this.device, this.cameraPass, this.tracePass);
     this.shadeMissPass = await ShadeMissPass.create(this.device, this.cameraPass, this.tracePass, envGenerator);
     this.accumulatePass = await AccumulatePass.create(this.device, this.resolution, this.renderState);
     this.postProcessPass = await PostProcessPass.create(this.device, presentationFormat, this.context, this.accumulatePass);
@@ -118,11 +120,9 @@ class PikeRenderer {
     this.cameraPass.generateCommands(commandEncoder);
     for (let i = 0; i < this.numBounces; i++) {
       this.tracePass.generateCommands(commandEncoder);
+      this.shadePass.generateCommands(commandEncoder);
+      this.traceShadowPass.generateCommands(commandEncoder);
       this.shadeMissPass.generateCommands(commandEncoder);
-      // Last bounce? Don't generate rays we won't trace.
-      if (i < this.numBounces - 1) {
-        this.shadePass.generateCommands(commandEncoder);
-      }
     };
 
     this.accumulatePass.generateCommands(commandEncoder);

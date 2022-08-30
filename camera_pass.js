@@ -95,8 +95,8 @@ export class CameraPass {
 
   createCameraRayBuffer() {
     const db = this.device.createBuffer({
-      // 256 byte aligned ray count + 48 byte aligned ray buffer * (1 bounce ray)
-      size: this.resolution[0] * this.resolution[1] * 12 * 4,
+      // 256 byte aligned ray count + 48 byte aligned ray buffer * (1 bounce ray + 1 shadow ray)
+      size: this.resolution[0] * this.resolution[1] * 12 * 4 * 2,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
     return db;

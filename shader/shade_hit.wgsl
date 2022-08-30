@@ -299,8 +299,14 @@ fn interpolateVertexAttribute(tri: Triangle, bary: vec3<f32>) -> VertexAttribute
   );
 }
 
-fn emitDeferredRay(deferredRay: DeferredRay) {
+fn emitBounceRay(deferredRay: DeferredRay) {
   let idx = atomicAdd(&renderState.numRays, 1);
+  rayBuffer.elements[idx] = deferredRay;
+}
+
+fn emitShadowRay(deferredRay: DeferredRay) {
+  let offset = arrayLength(&rayBuffer.elements) / 2;
+  let idx = atomicAdd(&renderState.numShadowRays, 1) + offset;
   rayBuffer.elements[idx] = deferredRay;
 }
 
@@ -357,10 +363,9 @@ fn main(
     let bounceRay = Ray(origin, dir);
     let bounceThroughput = vec4<f32>(bsdf * throughput * weight, bitcast<f32>(colorIdx));
     let deferredBounceRay = DeferredRay(bounceRay, bounceThroughput);
-    emitDeferredRay(deferredBounceRay);
+    emitBounceRay(deferredBounceRay);
   }
   
-  return;
   // Sample the environment light
   let envSample = sampleEnv(ONB);
   let envDir = ONB * envSample.wi;
@@ -371,8 +376,8 @@ fn main(
     let specWeight = powerHeuristic(envSample.pdf, specularPdf(wo, h, a, a));
     scale += f * specular * evalSpecular(wo, envSample, a, a) * specWeight;
     let shadowRay = Ray(origin, envDir);
-    let shadowThroughput = vec4<f32>(scale * throughput, bitcast<f32>(bitcast<u32>(hit.throughput.w) | 0x00008000u));
+    let shadowThroughput = vec4<f32>(scale * throughput, hit.throughput.w);
     let deferredShadowRay = DeferredRay(shadowRay, shadowThroughput);
-    emitDeferredRay(deferredShadowRay);
+    emitShadowRay(deferredShadowRay);
   }
 }

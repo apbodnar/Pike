@@ -29,7 +29,7 @@ fn main(
   var color: vec3<f32> = renderState.colorBuffer[colorIdx].rgb;
   var acc: vec3<f32> = tempBuffer.elements[colorIdx].rgb;
   acc = vec3<f32>(color + (acc * f32(renderState.samples)))/(f32(renderState.samples + 1));
-  let result = vec4<f32>(acc, 1.0);
+  let result = vec4<f32>(max(acc,  vec3<f32>(0f)), 1.0);
   tempBuffer.elements[colorIdx] = result;
   textureStore(accumulateTex, vec2<i32>(GID.xy), result);
 }
