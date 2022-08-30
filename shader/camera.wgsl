@@ -53,10 +53,14 @@ fn rand() -> f32 {
 }
 
 fn createPrimaryRay(gid: vec2<f32>, res: vec2<f32>) -> Ray {
-  let uv = (2f * ((gid + vec2<f32>(rand(), rand())) / res) - 1f) * vec2<f32>(res.x / res.y, -1f);
+  let k = 0.1f;
+  var uv = (2f * ((gid + vec2<f32>(rand(), rand())) / res) - 1f) * vec2<f32>(res.x / res.y, -1f);
+  let rd = length(uv);
+  let ru = rd * (1f + k*rd*rd);
   let up = vec3<f32>(0f, 1f, 0f);
-  let basisX: vec3<f32> = normalize(cross(cameraState.eye.dir, up)) * cameraState.fov;
-  let basisY: vec3<f32> = normalize(cross(basisX, cameraState.eye.dir)) * cameraState.fov;
+  uv = vec2<f32>(ru) * normalize(uv);
+  let basisX: vec3<f32> = normalize(cross(cameraState.eye.dir, up)) * tan(cameraState.fov * 0.5);
+  let basisY: vec3<f32> = normalize(cross(basisX, cameraState.eye.dir)) * tan(cameraState.fov * 0.5);
   let theta = rand() * M_TAU;
   let dof = (cos(theta) * basisX + sin(theta) * basisY) * cameraState.apertureSize * sqrt(rand());
   let screen: vec3<f32> = uv.x * basisX + uv.y * basisY + cameraState.eye.dir + cameraState.eye.origin;
