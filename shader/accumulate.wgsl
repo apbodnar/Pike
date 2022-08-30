@@ -2,7 +2,9 @@ struct RenderState {
   samples: i32,
   envTheta: f32,
   numHits: u32,
+  numMisses: u32,
   numRays: u32,
+  numShadowRays: u32,
   // Refactor once R/W storage textures exists
   colorBuffer: array<vec4<f32>>,
 };

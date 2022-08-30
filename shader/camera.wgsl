@@ -16,6 +16,7 @@ struct RenderState {
   numHits: u32,
   numMisses: u32,
   numRays: atomic<u32>,
+  numShadowRays: atomic<u32>,
   // Refactor once R/W storage textures exists
   colorBuffer: array<vec4<f32>>,
 };

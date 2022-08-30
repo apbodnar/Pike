@@ -153,6 +153,9 @@ fn intersectScene(ray: Ray, tid: u32) -> Hit {
     current = bvh.nodes[idx];
     if (current.triangles > -1) {
       processLeaf(current, ray, &result);
+      if (result.index != NO_HIT_IDX) {
+        return result;
+      }
     } else {
       let leftIndex = current.left;
       let rightIndex = current.right;
@@ -195,15 +198,9 @@ fn main(
     return;
   }
   let deferredRay = rayBuffer.elements[tid];
-  let colorIdx = bitcast<u32>(deferredRay.throughput.w);
   let ray = deferredRay.ray;
   var hit = intersectScene(ray, LID);
-  if (hit.index != NO_HIT_IDX) {
-    hit.throughput = vec4<f32>(deferredRay.throughput.rgb, bitcast<f32>(colorIdx));
-    hit.ray = ray;
-    let idx = atomicAdd(&renderState.numHits, 1);
-    hitBuffer.elements[idx] = hit;
-  } else {
+  if (hit.index == NO_HIT_IDX) {
     let idx = atomicAdd(&renderState.numMisses, 1);
     missBuffer.elements[idx] = deferredRay;
   }

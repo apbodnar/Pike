@@ -68,11 +68,11 @@ class RenderState {
   }
 
   clearNumRays(commandEncoder) {
-    commandEncoder.clearBuffer(this.renderStateBuffer, 16, 4);
+    commandEncoder.clearBuffer(this.renderStateBuffer, 16, 8);
   }
 
   clearColorBuffer(commandEncoder) {
-    commandEncoder.clearBuffer(this.renderStateBuffer, 20, this.renderStateBuffer.size - 20);
+    commandEncoder.clearBuffer(this.renderStateBuffer, 24, this.renderStateBuffer.size - 24);
   }
 }
 

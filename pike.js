@@ -15,6 +15,7 @@ class PikeRenderer {
     this.renderState = null;
     this.resolution = resolution;
     this.lastDraw = 0;
+    this.numBounces = 5;
     this.elements = {
       canvasElement: document.getElementById("trace"),
       sampleRateElement: document.getElementById("per-second"),
@@ -106,9 +107,6 @@ class PikeRenderer {
 
     let commandEncoder = this.device.createCommandEncoder();
     this.renderState.generateCommands(commandEncoder);
-    this.device.queue.submit([commandEncoder.finish()]);
-
-    commandEncoder = this.device.createCommandEncoder();
     this.renderState.incrementSamples();
     this.cameraPass.setCameraState({
       pos: ray.origin,
@@ -118,18 +116,15 @@ class PikeRenderer {
       apertureSize: this.apertureSize,
     });
     this.cameraPass.generateCommands(commandEncoder);
-    this.device.queue.submit([commandEncoder.finish()]);
-
-    for (let i = 0; i < 5; i++) {
-      commandEncoder = this.device.createCommandEncoder();
+    for (let i = 0; i < this.numBounces; i++) {
       this.tracePass.generateCommands(commandEncoder);
-      this.shadePass.generateCommands(commandEncoder);
       this.shadeMissPass.generateCommands(commandEncoder);
-      this.device.queue.submit([commandEncoder.finish()]);
-      //await this.renderState.printDebugInfo();
+      // Last bounce? Don't generate rays we won't trace.
+      if (i < this.numBounces - 1) {
+        this.shadePass.generateCommands(commandEncoder);
+      }
     };
 
-    commandEncoder = this.device.createCommandEncoder();
     this.accumulatePass.generateCommands(commandEncoder);
     this.postProcessPass.generateCommands(commandEncoder);
     this.device.queue.submit([commandEncoder.finish()]);
