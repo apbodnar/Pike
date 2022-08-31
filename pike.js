@@ -25,6 +25,9 @@ class PikeRenderer {
       thetaElement: document.getElementById("env-theta"),
       focalDepth: document.getElementById("focal-depth"),
       apertureSize: document.getElementById("aperture-size"),
+      distortion: document.getElementById("distortion"),
+      bokeh: document.getElementById("bokeh"),
+      saturation: document.getElementById("saturation"),
     };
     this.elements.thetaElement.addEventListener('input', (e) => {
       this.renderState.setEnvRotation(parseFloat(e.target.value));
@@ -34,6 +37,10 @@ class PikeRenderer {
     this.elements.exposureElement.addEventListener('input', (e) => {
       this.postProcessPass.setExposure(parseFloat(e.target.value));
     }, false);
+    this.saturation = 1;
+    this.elements.saturation.addEventListener('input', (e) => {
+      this.postProcessPass.setSaturation(parseFloat(e.target.value));
+    }, false);
     this.focalDepth = 0.5;
     this.elements.focalDepth.addEventListener('input', (e) => {
       this.focalDepth = parseFloat(e.target.value);
@@ -42,6 +49,16 @@ class PikeRenderer {
     this.apertureSize = 0.02;
     this.elements.apertureSize.addEventListener('input', (e) => {
       this.apertureSize = parseFloat(e.target.value);
+      this.renderState.resetSamples();
+    }, false);
+    this.distortion = 0.0;
+    this.elements.distortion.addEventListener('input', (e) => {
+      this.distortion = parseFloat(e.target.value);
+      this.renderState.resetSamples();
+    }, false);
+    this.bokeh = 0.5;
+    this.elements.bokeh.addEventListener('input', (e) => {
+      this.bokeh = parseFloat(e.target.value);
       this.renderState.resetSamples();
     }, false);
     this.camera = new CameraController(
@@ -116,6 +133,8 @@ class PikeRenderer {
       fov: this.camera.getFov(),
       focalDepth: this.focalDepth,
       apertureSize: this.apertureSize,
+      distortion: this.distortion,
+      bokeh: this.bokeh,
     });
     this.cameraPass.generateCommands(commandEncoder);
     for (let i = 0; i < this.numBounces; i++) {

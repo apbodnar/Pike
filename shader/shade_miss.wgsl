@@ -32,7 +32,7 @@ struct RenderState {
 
 @group(1) @binding(0) var<storage, read_write> renderState: RenderState;
 
-@group(2) @binding(0) var<storage, read_write> missBuffer: DeferredRayBuffer;
+@group(2) @binding(0) var<storage, read> missBuffer: DeferredRayBuffer;
 
 fn envColor(dir: vec3<f32>) -> vec3<f32> {
   let u = renderState.envTheta + atan2(dir.z, dir.x) / M_TAU;

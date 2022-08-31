@@ -232,6 +232,8 @@ export class CameraStateStuct extends WGSLPackedStruct {
       { name: "fov", type: Float32Array, count: 1 },
       { name: "focalDepth", type: Float32Array, count: 1 },
       { name: "apertureSize", type: Float32Array, count: 1},
+      { name: "distortion", type: Float32Array, count: 1},
+      { name: "bokeh", type: Float32Array, count: 1},
     ];
   }
 }
@@ -284,6 +286,7 @@ export class PostprocessParamsStruct extends WGSLPackedStruct {
   static get desc() {
     return [
       { name: "exposure", type: Float32Array, count: 1 },
+      { name: "saturation", type: Float32Array, count: 1 },
     ];
   }
 }

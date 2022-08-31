@@ -8,6 +8,8 @@ struct CameraState {
   fov: f32,
   focalDepth: f32,
   apertureSize: f32,
+  distortion: f32,
+  bokeh: f32,
 };
 
 struct RenderState {
@@ -53,7 +55,7 @@ fn rand() -> f32 {
 }
 
 fn createPrimaryRay(gid: vec2<f32>, res: vec2<f32>) -> Ray {
-  let k = 0.1f;
+  let k = cameraState.distortion;
   var uv = (2f * ((gid + vec2<f32>(rand(), rand())) / res) - 1f) * vec2<f32>(res.x / res.y, -1f);
   let rd = length(uv);
   let ru = rd * (1f + k*rd*rd);
@@ -62,7 +64,7 @@ fn createPrimaryRay(gid: vec2<f32>, res: vec2<f32>) -> Ray {
   let basisX: vec3<f32> = normalize(cross(cameraState.eye.dir, up)) * tan(cameraState.fov * 0.5);
   let basisY: vec3<f32> = normalize(cross(basisX, cameraState.eye.dir)) * tan(cameraState.fov * 0.5);
   let theta = rand() * M_TAU;
-  let dof = (cos(theta) * basisX + sin(theta) * basisY) * cameraState.apertureSize * sqrt(rand());
+  let dof = (cos(theta) * basisX + sin(theta) * basisY) * cameraState.apertureSize * pow(rand(), cameraState.bokeh);
   let screen: vec3<f32> = uv.x * basisX + uv.y * basisY + cameraState.eye.dir + cameraState.eye.origin;
   let dir = normalize((screen + dof * cameraState.focalDepth) - (cameraState.eye.origin + dof));
   let origin = dof + cameraState.eye.origin;

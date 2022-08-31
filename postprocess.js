@@ -7,13 +7,18 @@ export class PostProcessPass {
     this.context = context;
     this.accumulatePass = accumulatePass;
     this.exposure = 1.0;
+    this.saturation = 1.0;
     this.postprocessParamsBuffer =
-      new PostprocessParamsStruct({ exposure: this.exposure })
+      new PostprocessParamsStruct({ exposure: this.exposure, saturation: this.saturation })
         .createWGPUBuffer(this.device, GPUBufferUsage.COPY_DST | GPUBufferUsage.UNIFORM);
   }
 
   setExposure(exposure) {
     this.exposure = exposure;
+  }
+
+  setSaturation(saturation) {
+    this.saturation = saturation;
   }
 
   initBindGroups() {
@@ -70,7 +75,7 @@ export class PostProcessPass {
   }
 
   generateCommands(commandEncoder) {
-    const params = new PostprocessParamsStruct({ exposure: this.exposure });
+    const params = new PostprocessParamsStruct({ exposure: this.exposure, saturation: this.saturation });
     const source = params.createWGPUBuffer(this.device, GPUBufferUsage.COPY_SRC);
     commandEncoder.copyBufferToBuffer(source, 0, this.postprocessParamsBuffer, 0, params.size);
     const passEncoder = commandEncoder.beginRenderPass({

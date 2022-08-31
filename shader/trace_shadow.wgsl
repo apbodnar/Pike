@@ -2,10 +2,10 @@ const EPSILON: f32 = 0.0000001;
 const MAX_T: f32 = 100000.0;
 const NO_HIT_IDX: i32 = -1;
 const WORKGROUP_SIZE = 128;
-const SM_STACK_SIZE = 8;
+const SM_STACK_SIZE = 24;
 
 var<private> seed: u32;
-var<private> privateStack: array<i32, 24>;
+var<private> privateStack: array<i32, 32 - SM_STACK_SIZE>;
 var<workgroup> sharedStack: array<array<i32, SM_STACK_SIZE>, WORKGROUP_SIZE>;
 
 // Keep vertex positions separate from other "attributes" to maximize locality during traversal.
