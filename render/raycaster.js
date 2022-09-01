@@ -1,4 +1,4 @@
-import { Vec3 } from './vector.js'
+import { Vec3 } from './util/vector.js'
 
 const MAX_T = 1e6;
 

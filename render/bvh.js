@@ -1,9 +1,9 @@
-import { Vec3 } from './vector.js'
-import { Queue } from './utility.js'
+import { Vec3 } from './util/vector.js'
+import { Queue } from './util/utility.js'
 
 export class BVH {
   constructor(scene) {
-    this.exp = 3;
+    this.exp = 1;
     this.triangles = this._createTriangles(scene.indices, scene.attributes);
     let xIndices = this.triangles.map((_, i) => { return i });
     let yIndices = Array.from(xIndices);
@@ -15,7 +15,7 @@ export class BVH {
     this._numLeafTris = 0;
     this.largestLeaf = 0;
     this.root = this.buildTree([xIndices, yIndices, zIndices], this.depth, 0);
-    //this.serializeWideTree();
+    this.serializeWideTree();
     console.log("Largest leaf:", this.largestLeaf);
   }
 

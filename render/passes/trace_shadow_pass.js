@@ -27,7 +27,7 @@ export class TraceShadowPass {
   }
 
   async initPipeline() {
-    const wgsl = await fetch('./shader/trace_shadow.wgsl').then(res => res.text());
+    const wgsl = await fetch('render/shader/trace_shadow.wgsl').then(res => res.text());
     this.pipeline = this.device.createComputePipeline({
       layout: 'auto',
       compute: {

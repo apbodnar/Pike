@@ -1,6 +1,6 @@
 import {
   Vec3
-} from './vector.js'
+} from './util/vector.js'
 
 export class CameraController {
   constructor(canvas, ray, onChange) {
@@ -30,7 +30,7 @@ export class CameraController {
         yi = e.layerY;
       }
     }, false);
-    canvas.addEventListener("mouseup", (e) => {
+    canvas.addEventListener("mouseup", () => {
       mode = false;
       this.activeEvents.delete("mouse");
     }, false);

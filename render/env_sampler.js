@@ -1,9 +1,8 @@
 import {
   WGSLPackedStructArray,
-  RadianceBinStruct,
   LuminanceBinStruct,
   LuminanceCoordStruct,
-} from './utils.js';
+} from './util/structs.js';
 
 export class EnvironmentGenerator {
   constructor(img) {
@@ -54,15 +53,6 @@ export class EnvironmentGenerator {
         this.lookupData[idx] = i;
       }
     }
-  }
-
-  _luminance(pixel) {
-    const r = pixel[i];
-    const g = pixel[i + 1];
-    const b = pixel[i + 2];
-    const a = pixel[i + 3];
-    const power = Math.pow(2.0, a - 128);
-    return power * this._luma([r, g, b]) / 255;
   }
 
   _sortPixels() {

@@ -1,4 +1,4 @@
-import { PostprocessParamsStruct } from "./utils.js";
+import { PostprocessParamsStruct } from "../util/structs.js";
 
 export class PostProcessPass {
   constructor(device, presentationFormat, context, accumulatePass) {
@@ -48,7 +48,7 @@ export class PostProcessPass {
   }
 
   async initPipeline() {
-    const wgsl = await fetch('./shader/postprocess.wgsl').then(res => res.text());
+    const wgsl = await fetch('render/shader/postprocess.wgsl').then(res => res.text());
     this.pipeline = this.device.createRenderPipeline({
       layout: 'auto',
       vertex: {

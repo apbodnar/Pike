@@ -1,5 +1,4 @@
-import { CameraStateStuct, RenderStateStruct } from "./utils.js";
-
+import { CameraStateStuct, RenderStateStruct } from "../util/structs.js";
 
 class RenderState {
   constructor(device, resolution) {
@@ -136,7 +135,7 @@ export class CameraPass {
   }
 
   async createCameraPipeline() {
-    const cameraWGSL = await fetch('./shader/camera.wgsl').then(res => res.text());
+    const cameraWGSL = await fetch('render/shader/camera.wgsl').then(res => res.text());
     this.pipeline = this.device.createComputePipeline({
       layout: 'auto',
       compute: {

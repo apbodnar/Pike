@@ -26,7 +26,7 @@ export class ShadeMissPass {
   }
 
   async initPipeline() {
-    const wgsl = await fetch('./shader/shade_miss.wgsl').then(res => res.text());
+    const wgsl = await fetch('render/shader/shade_miss.wgsl').then(res => res.text());
     this.pipeline = this.device.createComputePipeline({
       layout: 'auto',
       compute: {

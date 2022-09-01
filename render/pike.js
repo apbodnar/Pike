@@ -1,14 +1,14 @@
 import { Scene } from './scene.js'
 import { CameraController } from './camera_controller.js'
-import { CameraPass } from './camera_pass.js'
+import { CameraPass } from './passes/camera_pass.js'
 import { Raycaster } from './raycaster.js'
-import { TracePass } from './trace_pass.js'
-import { ShadeHitPass } from './shade_hit_pass.js'
-import { PostProcessPass } from './postprocess.js'
-import { AccumulatePass } from './accumulate_pass.js'
-import { ShadeMissPass } from './shade_miss_pass.js'
+import { TracePass } from './passes/trace_pass.js'
+import { ShadeHitPass } from './passes/shade_hit_pass.js'
+import { PostProcessPass } from './passes/postprocess_pass.js'
+import { AccumulatePass } from './passes/accumulate_pass.js'
+import { ShadeMissPass } from './passes/shade_miss_pass.js'
 import { EnvironmentGenerator } from './env_sampler.js'
-import { TraceShadowPass } from './trace_shadow_pass.js'
+import { TraceShadowPass } from './passes/trace_shadow_pass.js'
 
 class PikeRenderer {
   constructor(scene, resolution) {

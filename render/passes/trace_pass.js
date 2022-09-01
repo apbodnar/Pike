@@ -3,8 +3,8 @@ import {
   VertexIndexStruct,
   VertexPositionStruct,
   WGSLPackedStructArray,
-} from "./utils.js";
-import { BVH } from './bvh.js'
+} from "../util/structs.js";
+import { BVH } from '../bvh.js'
 
 export class TracePass {
   constructor(device, cameraPass, scene) {
@@ -182,7 +182,7 @@ export class TracePass {
   }
 
   async initPipeline() {
-    const wgsl = await fetch('./shader/trace.wgsl').then(res => res.text());
+    const wgsl = await fetch('render/shader/trace.wgsl').then(res => res.text());
     this.pipeline = this.device.createComputePipeline({
       layout: 'auto',
       compute: {

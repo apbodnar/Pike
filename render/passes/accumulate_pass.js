@@ -28,7 +28,7 @@ export class AccumulatePass {
   }
 
   async createPipeline() {
-    const cameraWGSL = await fetch('./shader/accumulate.wgsl').then(res => res.text());
+    const cameraWGSL = await fetch('render/shader/accumulate.wgsl').then(res => res.text());
     this.pipeline = this.device.createComputePipeline({
       layout: 'auto',
       compute: {

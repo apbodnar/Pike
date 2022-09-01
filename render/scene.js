@@ -1,7 +1,7 @@
-import { GLTFLoader } from "./gltf_loader.js";
-import { Vec3, Vec } from './vector.js'
-import * as utils from './utility.js'
-import { TexturePacker } from "./texture_packer.js";
+import { GLTFLoader } from "./util/gltf_loader.js";
+import { Vec3, Vec } from './util/vector.js'
+import * as utils from './util/utility.js'
+import { TexturePacker } from "./util/texture_packer.js";
 
 export class Scene {
   constructor() {

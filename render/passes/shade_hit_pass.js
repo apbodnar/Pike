@@ -2,9 +2,7 @@ import {
   WGSLPackedStructArray,
   MaterialIndexStruct,
   VertexAttributeStruct,
-} from "./utils.js";
-
-import { EnvironmentGenerator } from './env_sampler.js'
+} from "../util/structs.js";
 
 export class ShadeHitPass {
   constructor(device, cameraPass, tracePass, scene, envGenerator) {
@@ -36,7 +34,7 @@ export class ShadeHitPass {
   }
 
   async initPipeline() {
-    const wgsl = await fetch('./shader/shade_hit.wgsl').then(res => res.text());
+    const wgsl = await fetch('render/shader/shade_hit.wgsl').then(res => res.text());
     const patched = wgsl.replace('###NUM_LUMINANCE_BINS###', this.envGenerator.luminanceHist.length)
     this.pipeline = this.device.createComputePipeline({
       layout: 'auto',
