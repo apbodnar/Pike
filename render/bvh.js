@@ -15,7 +15,7 @@ export class BVH {
     this._numLeafTris = 0;
     this.largestLeaf = 0;
     this.root = this.buildTree([xIndices, yIndices, zIndices], this.depth, 0);
-    this.serializeWideTree();
+    //this.serializeWideTree();
     console.log("Largest leaf:", this.largestLeaf);
   }
 

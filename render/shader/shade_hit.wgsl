@@ -74,8 +74,7 @@ struct Hit {
   t: f32,
   index: i32,
   bary: vec3<f32>,
-  ray: Ray,
-  throughput: vec4<f32>,
+  deferredRay: DeferredRay,
 };
 
 struct HitBuffer {
@@ -83,7 +82,7 @@ struct HitBuffer {
 }
 
 struct RenderState {
-  samples: i32,
+  samples: u32,
   envTheta: f32,
   numHits: u32,
   numMisses: u32,
@@ -319,12 +318,10 @@ fn main(
     return;
   }
   let hit = hitBuffer.elements[tid];
-  let ray = hit.ray;
-  let samples = u32(renderState.samples) & 0x0fffffffu;
-  let colorIdx = bitcast<u32>(hit.throughput.w);
-  var color = vec3<f32>(0f);
-  var throughput = hit.throughput.rgb;
-  seed = (GID.x * 1973u + colorIdx * 9277u + samples * 26699u) | 1u;
+  let ray = hit.deferredRay.ray;
+  let colorIdx = bitcast<u32>(hit.deferredRay.throughput.w);
+  var colorThroughput = hit.deferredRay.throughput.rgb;
+  seed = (GID.x * 1973u + colorIdx * 9277u + renderState.samples * 26699u) | 1u;
   seed = hash();
   
   let tri = triangles.triangles[hit.index];
@@ -361,7 +358,7 @@ fn main(
     let dir = ONB * bsdfSample.wi;
     let weight = powerHeuristic(bsdfSample.pdf, envPdf(dir));
     let bounceRay = Ray(origin, dir);
-    let bounceThroughput = vec4<f32>(bsdf * throughput * weight, bitcast<f32>(colorIdx));
+    let bounceThroughput = vec4<f32>(bsdf * colorThroughput * weight, hit.deferredRay.throughput.w);
     let deferredBounceRay = DeferredRay(bounceRay, bounceThroughput);
     emitBounceRay(deferredBounceRay);
   }
@@ -376,7 +373,7 @@ fn main(
     let specWeight = powerHeuristic(envSample.pdf, specularPdf(wo, h, a, a));
     scale += f * specular * evalSpecular(wo, envSample, a, a) * specWeight;
     let shadowRay = Ray(origin, envDir);
-    let shadowThroughput = vec4<f32>(scale * throughput, hit.throughput.w);
+    let shadowThroughput = vec4<f32>(scale * colorThroughput, hit.deferredRay.throughput.w);
     let deferredShadowRay = DeferredRay(shadowRay, shadowThroughput);
     emitShadowRay(deferredShadowRay);
   }

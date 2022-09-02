@@ -55,8 +55,7 @@ struct Hit {
   t: f32,
   index: i32,
   bary: vec3<f32>,
-  ray: Ray,
-  throughput: vec4<f32>,
+  deferredRay: DeferredRay,
 };
 
 struct HitBuffer {
@@ -142,8 +141,8 @@ fn stackPop(sptr: ptr<function, i32>, tid: u32) -> i32{
   return select(privateStack[*sptr - SM_STACK_SIZE], sharedStack[tid][*sptr], *sptr < SM_STACK_SIZE);
 }
 
-fn intersectScene(ray: Ray, tid: u32) -> Hit {
-  var result = Hit(MAX_T, NO_HIT_IDX, vec3<f32>(), ray, vec4<f32>());
+fn intersectScene(deferredRay: DeferredRay, tid: u32) -> Hit {
+  var result = Hit(MAX_T, NO_HIT_IDX, vec3<f32>(), deferredRay);
   var sptr: i32 = 0;
   stackPush(NO_HIT_IDX, &sptr, tid);
   var idx: i32 = 0;
@@ -152,15 +151,15 @@ fn intersectScene(ray: Ray, tid: u32) -> Hit {
     if (idx <= NO_HIT_IDX) { break; }
     current = bvh.nodes[idx];
     if (current.triangles > -1) {
-      processLeaf(current, ray, &result);
+      processLeaf(current, deferredRay.ray, &result);
       if (result.index != NO_HIT_IDX) {
         return result;
       }
     } else {
       let leftIndex = current.left;
       let rightIndex = current.right;
-      let leftHit = rayBoxIntersect(bvh.nodes[leftIndex], ray);
-      let rightHit = rayBoxIntersect(bvh.nodes[rightIndex], ray);
+      let leftHit = rayBoxIntersect(bvh.nodes[leftIndex], deferredRay.ray);
+      let rightHit = rayBoxIntersect(bvh.nodes[rightIndex], deferredRay.ray);
       if (leftHit < result.t && rightHit < result.t) {
         var deferred: i32;
         if (leftHit > rightHit) {
@@ -199,8 +198,7 @@ fn main(
   }
   let offset = arrayLength(&rayBuffer.elements) / 2;
   let deferredRay = rayBuffer.elements[tid + offset];
-  let ray = deferredRay.ray;
-  var hit = intersectScene(ray, LID);
+  var hit = intersectScene(deferredRay, LID);
   if (hit.index == NO_HIT_IDX) {
     let idx = atomicAdd(&renderState.numMisses, 1);
     missBuffer.elements[idx] = deferredRay;
