@@ -91,7 +91,7 @@ class PikeRenderer {
   async initWebGpu() {
     this.adapter = await navigator.gpu.requestAdapter();
     this.device = await this.adapter.requestDevice({
-      requiredLimits: { maxStorageBufferBindingSize: 4294967295 },
+      requiredLimits: { maxStorageBufferBindingSize: 2147483647 },
     });
     this.elements.canvasElement.width = this.resolution[0];
     this.elements.canvasElement.height = this.resolution[1];

@@ -9,11 +9,13 @@ export class Scene {
     this.groups = null;
     this.materials = [];
     this.materialIds = {};
-    this.texturePacker = new TexturePacker(2048);
+    this.texturePacker = null;
   }
   
   async load(uri) {
     this.desc = await (await fetch(uri)).json();
+    this.texturePacker = new TexturePacker(this.desc.atlasRes ?? 1024);
+
     this.groups = await Promise.all(this.desc.props.map((prop) => {
       return new GLTFLoader().load(prop.uri);
     }))
