@@ -19,7 +19,7 @@ export class Scene {
     this.groups = await Promise.all(this.desc.props.map((prop) => {
       return new GLTFLoader().load(prop.uri);
     }));
-    this.texturePacker = new TexturePacker(this.desc.atlasRes ?? 1024);
+    this.texturePacker = new TexturePacker(this.desc.atlasRes ?? 2048);
     const images = [];
     this.groups.forEach((g, i) => {
       images.push(...g.images);
