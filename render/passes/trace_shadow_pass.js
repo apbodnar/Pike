@@ -46,7 +46,7 @@ export class TraceShadowPass {
     computePass.setBindGroup(0, this.bvhBindGroup);
     computePass.setBindGroup(1, this.collisionBindGroup);
     computePass.setBindGroup(2, this.rayStateBindGroup);
-    const numWorkgroups = Math.ceil(2 * this.cameraPass.resolution[0] * this.cameraPass.resolution[1] / workGroupSize);
+    const numWorkgroups = Math.ceil(2 * this.cameraPass.batchSize / workGroupSize);
     computePass.dispatchWorkgroups(numWorkgroups);
     computePass.end();
   }

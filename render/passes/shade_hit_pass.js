@@ -2,6 +2,7 @@ import {
   WGSLPackedStructArray,
   MaterialIndexStruct,
   VertexAttributeStruct,
+  LightBoxStruct,
 } from "../util/structs.js";
 
 export class ShadeHitPass {
@@ -34,13 +35,20 @@ export class ShadeHitPass {
   }
 
   async initPipeline() {
-    const wgsl = await fetch('render/shader/shade_hit.wgsl').then(res => res.text());
-    const patched = wgsl.replace('###NUM_LUMINANCE_BINS###', this.envGenerator.luminanceHist.length)
+    let wgsl = await fetch('render/shader/shade_hit.wgsl').then(res => res.text());
+    if (!this.scene.env) {
+      wgsl = wgsl.replace('const SAMPLE_ENV_LIGHT = true;',
+        'const SAMPLE_ENV_LIGHT = false;');
+    }
+    if (this.scene.lights.length > 0) {
+      wgsl = wgsl.replace('const NUM_SCENE_LIGHTS = 0;',
+        `const NUM_SCENE_LIGHTS = ${this.scene.lights.length};`);
+    }
     this.pipeline = this.device.createComputePipeline({
       layout: 'auto',
       compute: {
         module: this.device.createShaderModule({
-          code: patched,
+          code: wgsl,
         }),
         entryPoint: 'main',
       },
@@ -90,6 +98,10 @@ export class ShadeHitPass {
     for (let attribute of this.scene.attributes) {
       attributeBuffer.push(new VertexAttributeStruct(attribute));
     }
+    const lightBoxBuffer = new WGSLPackedStructArray(LightBoxStruct, this.scene.lights.length);
+    for (let box of this.scene.lights) {
+      lightBoxBuffer.push(new LightBoxStruct({boxMin: box.min, boxMax: box.max}));
+    }
     const atlasTexture = this.createAtlasTetxure();
     const luminanceBinBuffer = this.envGenerator.createHistogramBuffer();
     const luminanceCoordBuffer = this.envGenerator.createEnvCoordBuffer();
@@ -118,13 +130,13 @@ export class ShadeHitPass {
         },
         {
           binding: 3,
-          resource:  {
+          resource: {
             buffer: this.envGenerator.createEnvResBuffer(this.device),
           },
         },
         {
           binding: 4,
-          resource:  pdfTexture.createView(),
+          resource: pdfTexture.createView(),
         },
         {
           binding: 5,
@@ -144,6 +156,12 @@ export class ShadeHitPass {
           binding: 7,
           resource: this.createSampler('linear'),
         },
+        // {
+        //   binding: 8,
+        //   resource: {
+        //     buffer: lightBoxBuffer.createWGPUBuffer(this.device, GPUBufferUsage.UNIFORM),
+        //   },
+        // },
       ],
     });
   }
@@ -157,7 +175,7 @@ export class ShadeHitPass {
     computePass.setBindGroup(0, this.shadingBindGroup);
     computePass.setBindGroup(1, this.rayStateBindGroup);
     computePass.setBindGroup(2, this.collisionBindGroup);
-    const numWorkgroups = Math.ceil(this.cameraPass.resolution[0] * this.cameraPass.resolution[1] / workGroupSize);
+    const numWorkgroups = Math.ceil(this.cameraPass.batchSize / workGroupSize);
     computePass.dispatchWorkgroups(numWorkgroups);
     computePass.end();
   }

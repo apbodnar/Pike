@@ -51,7 +51,8 @@ fn main(
     return;
   }
   let deferredRay = missBuffer.elements[tid];
-  let colorIdx = bitcast<u32>(deferredRay.throughput.w);
+  let coordMask = bitcast<u32>(deferredRay.throughput.w);
+  let colorIdx = coordMask & 0x0fffffff;
   var color = envColor(deferredRay.ray.dir) * deferredRay.throughput.rgb;
   renderState.colorBuffer[colorIdx] += vec4<f32>(color, 1.0);
 }

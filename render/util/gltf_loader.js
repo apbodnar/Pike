@@ -154,8 +154,25 @@ class GLTFMaterial {
     return !!this.desc.pbrMetallicRoughness?.baseColorTexture;
   }
 
+  hasEmissive() {
+    return !!this.desc.emissiveFactor;
+  }
+
+  getEmissive() {
+    return this.desc.emissiveFactor?.slice(0, 3) ?? [0, 0, 0];
+  }
+
+  hasEmissiveTexture() {
+    return !!this.desc.emissiveTexture;
+  }
+
+  getEmissiveTexture() {
+    const idx = this.desc.emissiveTexture.index;
+    return this.loader.images[idx];
+  }
+
   getBaseColor() {
-    return this.desc.pbrMetallicRoughness?.baseColorFactor?.slice(0, 3) ?? [0.8, 0.8, 0.8];
+    return this.desc.pbrMetallicRoughness?.baseColorFactor?.slice(0, 4) ?? [0.8, 0.8, 0.8, 1];
   }
 
   getBaseColorTexture() {

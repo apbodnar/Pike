@@ -15,8 +15,9 @@ class PikeRenderer {
     this.scene = scene;
     this.renderState = null;
     this.resolution = resolution;
+    this.BATCH_SIZE = resolution[0] *  resolution[1];//512 * 512;
     this.lastDraw = 0;
-    this.numBounces = 5;
+    this.numBounces = 4;
     this.elements = {
       canvasElement: document.getElementById("trace"),
       sampleRateElement: document.getElementById("per-second"),
@@ -104,13 +105,13 @@ class PikeRenderer {
     });
 
     const envGenerator = new EnvironmentGenerator(this.scene.env);
-    this.cameraPass = await CameraPass.create(this.device, this.resolution);
+    this.cameraPass = await CameraPass.create(this.device, this.resolution, this.BATCH_SIZE);
     this.renderState = this.cameraPass.getRenderState();
     this.tracePass = await TracePass.create(this.device, this.cameraPass, this.scene);
     this.shadePass = await ShadeHitPass.create(this.device, this.cameraPass, this.tracePass, this.scene, envGenerator);
     this.traceShadowPass = await TraceShadowPass.create(this.device, this.cameraPass, this.tracePass);
     this.shadeMissPass = await ShadeMissPass.create(this.device, this.cameraPass, this.tracePass, envGenerator);
-    this.accumulatePass = await AccumulatePass.create(this.device, this.resolution, this.renderState);
+    this.accumulatePass = await AccumulatePass.create(this.device, this.resolution, this.renderState, this.cameraPass);
     this.postProcessPass = await PostProcessPass.create(this.device, presentationFormat, this.context, this.accumulatePass);
     this.raycaster = new Raycaster(this.tracePass.getBVH());
   }
@@ -127,23 +128,31 @@ class PikeRenderer {
     let commandEncoder = this.device.createCommandEncoder();
     this.renderState.generateCommands(commandEncoder);
     this.renderState.incrementSamples();
-    this.cameraPass.setCameraState({
-      pos: ray.origin,
-      dir: ray.dir,
-      fov: this.camera.getFov(),
-      focalDepth: this.focalDepth,
-      apertureSize: this.apertureSize,
-      distortion: this.distortion,
-      bokeh: this.bokeh,
-    });
-    this.cameraPass.generateCommands(commandEncoder);
-    for (let i = 0; i < this.numBounces; i++) {
-      this.tracePass.generateCommands(commandEncoder);
-      this.shadePass.generateCommands(commandEncoder);
-      this.traceShadowPass.generateCommands(commandEncoder);
-      this.shadeMissPass.generateCommands(commandEncoder);
-    };
-
+    this.renderState.clearColorBuffer(commandEncoder);
+    const NUM_BATCHES = Math.ceil(this.resolution[0] * this.resolution[1] / this.BATCH_SIZE);
+    
+    for (let j = 0; j < NUM_BATCHES; j++) {
+        this.renderState.clearNumHitsAndMisses(commandEncoder);
+        this.renderState.clearNumRays(commandEncoder);
+        this.cameraPass.setCameraState({
+          pos: ray.origin,
+          dir: ray.dir,
+          fov: this.camera.getFov(),
+          focalDepth: this.focalDepth,
+          apertureSize: this.apertureSize,
+          distortion: this.distortion,
+          bokeh: this.bokeh,
+          invocationOffset: j * this.BATCH_SIZE,
+        });
+        this.cameraPass.generateCommands(commandEncoder);
+        for (let i = 0; i < this.numBounces; i++) {
+          this.tracePass.generateCommands(commandEncoder);
+          this.shadePass.generateCommands(commandEncoder);
+          this.traceShadowPass.generateCommands(commandEncoder);
+          this.shadeMissPass.generateCommands(commandEncoder);
+        }
+    }
+    
     this.accumulatePass.generateCommands(commandEncoder);
     this.postProcessPass.generateCommands(commandEncoder);
     this.device.queue.submit([commandEncoder.finish()]);

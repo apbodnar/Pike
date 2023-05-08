@@ -7,6 +7,7 @@ const SM_STACK_SIZE = 24;
 var<private> seed: u32;
 var<private> privateStack: array<i32, 32 - SM_STACK_SIZE>;
 var<workgroup> sharedStack: array<array<i32, SM_STACK_SIZE>, WORKGROUP_SIZE>;
+var<workgroup> queueIdx: atomic<u32>;
 
 // Keep vertex positions separate from other "attributes" to maximize locality during traversal.
 struct Triangle {
@@ -188,18 +189,23 @@ fn intersectScene(deferredRay: DeferredRay, tid: u32) -> Hit {
 fn main(
   @builtin(local_invocation_index) LID : u32,
   @builtin(global_invocation_id) GID : vec3<u32>,
+  @builtin(workgroup_id) WID : vec3<u32>,
 ) {
-  let tid = GID.x;
-  if (tid >= renderState.numRays) {
-    return;
-  }
-  let deferredRay = rayBuffer.elements[tid];
-  var hit = intersectScene(deferredRay, LID);
-  if (hit.index != NO_HIT_IDX) {
-    let idx = atomicAdd(&renderState.numHits, 1);
-    hitBuffer.elements[idx] = hit;
-  } else {
-    let idx = atomicAdd(&renderState.numMisses, 1);
-    missBuffer.elements[idx] = deferredRay;
+  let wid = WID.x;
+  loop {
+    let qIdx = atomicAdd(&queueIdx, 1);
+    let jid = qIdx + wid * WORKGROUP_SIZE ;
+    if (qIdx >= WORKGROUP_SIZE || jid >= renderState.numRays) {
+      return;
+    }
+    let deferredRay = rayBuffer.elements[jid];
+    var hit = intersectScene(deferredRay, LID);
+    if (hit.index != NO_HIT_IDX) {
+      let idx = atomicAdd(&renderState.numHits, 1);
+      hitBuffer.elements[idx] = hit;
+    } else {
+      let idx = atomicAdd(&renderState.numMisses, 1);
+      missBuffer.elements[idx] = deferredRay;
+    }
   }
 }

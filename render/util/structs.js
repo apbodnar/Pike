@@ -170,6 +170,15 @@ export class BVHNodeStruct extends WGSLPackedStruct {
   }
 }
 
+export class LightBoxStruct extends WGSLPackedStruct {
+  static get desc() {
+    return [
+      { name: "boxMin", type: Float32Array, count: 3 },
+      { name: "boxMax", type: Float32Array, count: 3 },
+    ];
+  }
+}
+
 export class TriangleStruct extends WGSLPackedStruct {
   static get desc() {
     return [
@@ -234,6 +243,7 @@ export class CameraStateStuct extends WGSLPackedStruct {
       { name: "apertureSize", type: Float32Array, count: 1},
       { name: "distortion", type: Float32Array, count: 1},
       { name: "bokeh", type: Float32Array, count: 1},
+      { name: "invocationOffset", type: Uint32Array, count: 1},
     ];
   }
 }
@@ -290,4 +300,3 @@ export class PostprocessParamsStruct extends WGSLPackedStruct {
     ];
   }
 }
-

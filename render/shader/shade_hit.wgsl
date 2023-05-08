@@ -5,7 +5,10 @@ const INV_PI: f32 = 0.3183098861837907;
 const INV_TAU: f32 = 0.15915494309189535;
 const NO_HIT_IDX: i32 = -1;
 const WORKGROUP_SIZE = 128;
-const NUM_LUMINANCE_BINS = ###NUM_LUMINANCE_BINS###u;
+const SAMPLE_ENV_LIGHT = true;
+const NUM_SCENE_LIGHTS = 0;
+const ENV_SAMPLE = 0x00000000;
+const LIGHT_SAMPLE = 0x10000000;
 
 var<private> seed: u32;
 
@@ -36,6 +39,15 @@ struct TextureTransform {
   scale: vec2<f32>,
   trans: vec2<f32>,
 }
+
+struct LightBox {
+  min: vec3<f32>,
+  max: vec3<f32>,
+}
+
+// struct LightBoxBuffer {
+//   elements: array<LightBox, NUM_SCENE_LIGHTS>,
+// }
 
 struct MaterialIndex {
   diffMap: i32,
@@ -106,9 +118,23 @@ struct LuminanceBins {
 };
 
 struct Sample {
+  // incoming (in the sense of a reverse path) ray direction in hemisphere space
   wi: vec3<f32>,
   pdf: f32,
 };
+
+struct SurfaceInteraction {
+  basis: mat3x3<f32>,
+  wo: vec3<f32>,
+  origin: vec3<f32>,
+  normal: vec3<f32>,
+  baseColor: vec3<f32>,
+  specularColor: vec3<f32>,
+  emissionColor: vec3<f32>,
+  metallic: f32,
+  opacity: f32,
+  roughAlpha: f32, 
+}
 
 @group(0) @binding(0) var<storage, read> attrs: VertexAttributes;
 @group(0) @binding(1) var<storage, read> materials: MaterialIndices;
@@ -118,6 +144,7 @@ struct Sample {
 @group(0) @binding(5) var<storage, read> envCoords: LuminanceCoords;
 @group(0) @binding(6) var<storage, read> envLuminance: LuminanceBins;
 @group(0) @binding(7) var atlasSampler: sampler;
+// @group(0) @binding(8) var<uniform> lightBoxBuffer: LightBoxBuffer;
 
 @group(1) @binding(0) var<storage, read_write> renderState: RenderState;
 @group(1) @binding(1) var<storage, read_write> rayBuffer: DeferredRayBuffer;
@@ -151,6 +178,29 @@ fn branchlessONB(n: vec3<f32>) -> mat3x3<f32> {
   return mat3x3<f32>(b1, b2, n);
 }
 
+fn getSurfaceInteraction(hit: Hit) -> SurfaceInteraction {
+  let ray = hit.deferredRay.ray;
+  let tri = triangles.triangles[hit.index];
+  let attr = interpolateVertexAttribute(tri, hit.bary);
+  let matIdx = materials.indices[tri.matId];
+  let mapNormal = (textureSampleLevel(atlasTex, atlasSampler, applyTextureTransform(attr.uv, matIdx.normMapTransform), matIdx.normMap, 0f).xyz - vec3<f32>(0.5, 0.5, 0.0)) * vec3<f32>(2.0, 2.0, 1.0);
+  var si = SurfaceInteraction();
+  si.normal = normalize(mat3x3<f32>(attr.tangent, attr.bitangent, attr.normal) * mapNormal);
+  si.origin = ray.origin + ray.dir * (hit.t - EPSILON * 40f);
+  // ONB used for computations using the mapped normal;
+  si.basis = branchlessONB(si.normal);
+  si.wo = -ray.dir * si.basis;
+  let baseColorOpacity = textureSampleLevel(atlasTex, atlasSampler, applyTextureTransform(attr.uv, matIdx.diffMapTransform), matIdx.diffMap, 0f);
+  si.baseColor = baseColorOpacity.rgb;
+  si.opacity = baseColorOpacity.a;
+  let metRough = textureSampleLevel(atlasTex, atlasSampler, applyTextureTransform(attr.uv, matIdx.metRoughMapTransform), matIdx.metRoughMap, 0f).xyz;
+  si.metallic = metRough.b;
+  si.roughAlpha = metRough.g * metRough.g;
+  si.emissionColor = textureSampleLevel(atlasTex, atlasSampler, applyTextureTransform(attr.uv, matIdx.emitMapTransform), matIdx.emitMap, 0f).xyz;
+  si.specularColor = mix(vec3<f32>(1f), si.baseColor, si.metallic);
+  return si;
+}
+
 fn envPdf(dir: vec3<f32>) -> f32 {
   let dims = vec2<f32>(envRes);
   let u = (1f + renderState.envTheta + atan2(dir.z, dir.x) / M_TAU) % 1f;
@@ -178,8 +228,18 @@ fn sampleEnv(ONB: mat3x3<f32>) -> Sample {
   return Sample(dir * ONB, pdf);
 }
 
-fn lambertPdf(wi: vec3<f32>, n: vec3<f32>) -> f32 {
-  return max(dot(wi, n), EPSILON) * INV_PI;
+// fn sampleSceneLight(si: SurfaceInteraction) -> Sample {
+//   let light = lightBoxBuffer.elements[hash() % NUM_SCENE_LIGHTS];
+//   let span = light.max - light.min;
+//   let boxPoint = light.min + span * vec3<f32>(rand(), rand(), rand());
+//   let len = length(boxPoint - si.origin);
+//   let dir = (boxPoint - si.origin) / len;
+//   let pdf = 1f;//(span.x * span.y * span.z) / NUM_SCENE_LIGHTS / len;
+//   return Sample(dir * si.basis, pdf);
+// }
+
+fn lambertPdf(wi: vec3<f32>) -> f32 {
+  return max(wi.z, EPSILON) * INV_PI;
 }
 
 fn sampleLambert() -> Sample {
@@ -190,21 +250,21 @@ fn sampleLambert() -> Sample {
   let y = r * sin(phi);
   let z = sqrt(max(0.0, 1.0 - x*x - y*y));
   let dir = vec3<f32>(x, y, z);
-  let pdf = lambertPdf(dir, normal);
+  let pdf = lambertPdf(dir);
   return Sample(dir, pdf);
 }
 
-fn evalLambert(sample: Sample) -> f32 {
+fn evalLambert(si: SurfaceInteraction, sample: Sample) -> vec3<f32> {
   // Lambertian BRDF = Albedo / Pi
   // TODO: the math can be simplified once i'm confident in all the statistical derivations elsewhere
   // https://computergraphics.stackexchange.com/questions/8578
-  return INV_PI * max(EPSILON, sample.wi.z) / sample.pdf;
+  return si.baseColor * INV_PI * max(EPSILON, sample.wi.z) / sample.pdf;
 }
 
-// D for Cook Torrence microfacet BSDF using GGX distribution.
-// m: the microfacet normal centered on (0, 0, 1)
-// au: anisotropic roughness along the tangent
-// av: anisotropic roughness along the bitangent 
+// GGX NDF and PDF from: A Simpler and Exact Sampling Routine for the GGX
+// Distribution of Visible Normals - Eric Heitz
+// https://hal.archives-ouvertes.fr/hal-01509746/document
+
 fn GGX_D(m: vec3<f32>, au: f32, av: f32) -> f32 {
   let auv = au * av;
   let tangent = m.x / au;
@@ -234,9 +294,12 @@ fn GGX_G(wi: vec3<f32>, wo: vec3<f32>, m: vec3<f32>, au: f32, av: f32) -> f32 {
 }
 
 //From: "Sampling the GGX Distribution of Visible Normals - Eric Heitz"
-fn sampleGGX(wo: vec3<f32>, au: f32, av: f32) -> vec3<f32> {
+fn sampleGGX(si: SurfaceInteraction) -> vec3<f32> {
+  // No anisotropy for now.
+  let au = si.roughAlpha;
+  let av = si.roughAlpha;
   // Section 3.2: transforming the view direction to the hemisphere configuration
-  let Vh = normalize(vec3(au * wo.x, av * wo.y, wo.z));
+  let Vh = normalize(vec3(au * si.wo.x, av * si.wo.y, si.wo.z));
   // Section 4.1: orthonormal basis (with special case if cross product is zero)
   let lensq = dot(Vh.xy, Vh.xy);
   let T1 = select(vec3<f32>(1f,0f,0f),  vec3<f32>(-Vh.y, Vh.x, 0f) * inverseSqrt(lensq), lensq > 0f);
@@ -254,21 +317,36 @@ fn sampleGGX(wo: vec3<f32>, au: f32, av: f32) -> vec3<f32> {
   return normalize(vec3<f32>(au * Nh.x, av * Nh.y, max(0.0, Nh.z)));
 }
 
-fn specularPdf(wo: vec3<f32>, m: vec3<f32>, au: f32, av: f32) -> f32 {
-  return max(EPSILON, GGX_D(m, au, av) * GGX_G1(wo, m, au, av) / (4f * wo.z));
+fn specularPdf(si: SurfaceInteraction, m: vec3<f32>) -> f32 {
+  let au = si.roughAlpha;
+  let av = si.roughAlpha;
+  return max(EPSILON, GGX_D(m, au, av) * GGX_G1(si.wo, m, au, av) / (4f * si.wo.z));
 }
 
-fn sampleSpecular(wo: vec3<f32>,  m: vec3<f32>, au: f32, av: f32) -> Sample {
-  let wi = reflect(-wo, m);
-  let pdf = specularPdf(wo, m, au, av);
+fn sampleSpecular(si: SurfaceInteraction,  m: vec3<f32>) -> Sample {
+  let wi = reflect(-si.wo, m);
+  let pdf = specularPdf(si, m);
   return Sample(wi, pdf);
 }
 
-fn evalSpecular(wo: vec3<f32>, sample: Sample, au: f32, av: f32) -> f32 {
-  let H = normalize(wo + sample.wi);
+fn evalSpecular(si: SurfaceInteraction, sample: Sample) -> vec3<f32> {
+  let au = si.roughAlpha;
+  let av = si.roughAlpha;
+  let H = normalize(si.wo + sample.wi);
   let D = GGX_D(H, au, av);
-  let G = GGX_G(sample.wi, wo, H, au, av);
-  return max(D * G / (4f * wo.z * sample.pdf), 0f);
+  let G = GGX_G(sample.wi, si.wo, H, au, av);
+  return max(D * G / (4f * si.wo.z * sample.pdf), 0f) * si.specularColor;
+}
+
+fn createMaterialSampleRay(si: SurfaceInteraction, sample: Sample, f: f32, rayThroughput: vec4<f32>) -> DeferredRay {
+  let lambertWeight = powerHeuristic(sample.pdf, lambertPdf(sample.wi));
+  var scale = (1f - f) * evalLambert(si, sample) * lambertWeight;
+  let h = normalize(si.wo + sample.wi);
+  let specWeight = powerHeuristic(sample.pdf, specularPdf(si, h));
+  scale += f * evalSpecular(si, sample) * specWeight;
+  let ray = Ray(si.origin, si.basis * sample.wi);
+  let throughput = vec4<f32>(scale * rayThroughput.rgb, rayThroughput.w);
+  return DeferredRay(ray, throughput);
 }
 
 fn schlick(cosTheta: f32, ior: f32) -> f32 {
@@ -319,62 +397,71 @@ fn main(
   }
   let hit = hitBuffer.elements[tid];
   let ray = hit.deferredRay.ray;
-  let colorIdx = bitcast<u32>(hit.deferredRay.throughput.w);
+  let coordMask = bitcast<u32>(hit.deferredRay.throughput.w);
+  let colorIdx = coordMask & 0x0fffffffu;
+  let rayType = coordMask & 0xf0000000u;
   var colorThroughput = hit.deferredRay.throughput.rgb;
   seed = (GID.x * 1973u + colorIdx * 9277u + renderState.samples * 26699u) | 1u;
   seed = hash();
   
-  let tri = triangles.triangles[hit.index];
-  let attr = interpolateVertexAttribute(tri, hit.bary);
-  let matIdx = materials.indices[tri.matId];
-  let mapNormal = (textureSampleLevel(atlasTex, atlasSampler, applyTextureTransform(attr.uv, matIdx.normMapTransform), matIdx.normMap, 0f).xyz - vec3<f32>(0.5, 0.5, 0.0)) * vec3<f32>(2.0, 2.0, 1.0);
-  let normal =  normalize(mat3x3<f32>(attr.tangent, attr.bitangent, attr.normal) * mapNormal);
-  // ONB used for computations using the mapped normal;
-  
-  let ONB = branchlessONB(normal);
-  let origin = ray.origin + ray.dir * (hit.t - EPSILON * 40f);
+  let si = getSurfaceInteraction(hit);
 
-  let metRough = textureSampleLevel(atlasTex, atlasSampler, applyTextureTransform(attr.uv, matIdx.metRoughMapTransform), matIdx.metRoughMap, 0f).xyz;
-  let diffuse = textureSampleLevel(atlasTex, atlasSampler, applyTextureTransform(attr.uv, matIdx.diffMapTransform), matIdx.diffMap, 0f).xyz;
-  let specular = mix(vec3<f32>(1f), diffuse, metRough.b);
+  if (rand() > si.opacity) {
+    let alphaOrigin = ray.origin + ray.dir * (hit.t + EPSILON * 40f);
+    let bounceRay = Ray(alphaOrigin, ray.dir);
+    emitBounceRay(DeferredRay(bounceRay, hit.deferredRay.throughput));
+    return;
+  }
   
-  let a = metRough.g * metRough.g;
-  let wo = -ray.dir * ONB;
-  let m = sampleGGX(wo, a, a);
-  let f = mix(schlick(max(dot(wo, m), 0f), 1.5), 1f, metRough.b);
+  // Add the surface's emission if there is any
+  if(dot(si.emissionColor, vec3<f32>(1f)) > 0f) {
+    let attenuation = max(dot(si.normal, si.basis * si.wo), 0f);
+    renderState.colorBuffer[colorIdx] += vec4<f32>(vec3<f32>(50f) * si.emissionColor * colorThroughput * attenuation, 1.0);
+    return;
+  }
+  // Kill the path if this was a light ray to avoid creating too many bounce rays.
+  if (rayType == LIGHT_SAMPLE) {
+    return;
+  }
+
+  let m = sampleGGX(si);
+  let f = mix(schlick(max(dot(si.wo, m), 0f), 1.5), 1f, si.metallic);
 
   // Sample the BSDF
   var bsdfSample: Sample;
   var bsdf: vec3<f32>;
   if (rand() > f) {
     bsdfSample = sampleLambert();
-    bsdf = diffuse * evalLambert(bsdfSample);
+    bsdf = evalLambert(si, bsdfSample);
   } else {
-    bsdfSample = sampleSpecular(wo, m, a, a);
-    bsdf = specular * evalSpecular(wo, bsdfSample, a, a);
+    bsdfSample = sampleSpecular(si, m);
+    bsdf = evalSpecular(si, bsdfSample);
   }
   
   if (bsdfSample.wi.z > 0f) {
-    let dir = ONB * bsdfSample.wi;
-    let weight = powerHeuristic(bsdfSample.pdf, envPdf(dir));
-    let bounceRay = Ray(origin, dir);
+    let dir = si.basis * bsdfSample.wi;
+    let weight = select(1f, powerHeuristic(bsdfSample.pdf, envPdf(dir)), SAMPLE_ENV_LIGHT);
+    let bounceRay = Ray(si.origin, dir);
     let bounceThroughput = vec4<f32>(bsdf * colorThroughput * weight, hit.deferredRay.throughput.w);
     let deferredBounceRay = DeferredRay(bounceRay, bounceThroughput);
     emitBounceRay(deferredBounceRay);
   }
+
+  // if (NUM_SCENE_LIGHTS > 0) {
+  //   let lightSample = sampleSceneLight(si);
+  //   if (lightSample.wi.z > EPSILON) {
+  //     var lightDeferredRay = createMaterialSampleRay(si, lightSample, f, hit.deferredRay.throughput);
+  //     lightDeferredRay.throughput.w = bitcast<f32>(bitcast<u32>(lightDeferredRay.throughput.w) | LIGHT_SAMPLE);
+  //     emitBounceRay(lightDeferredRay);
+  //   }
+  // }
   
   // Sample the environment light
-  let envSample = sampleEnv(ONB);
-  let envDir = ONB * envSample.wi;
-  if (dot(envSample.wi, m) > 0f && envSample.wi.z > 0f) {
-    let lambertWeight = powerHeuristic(envSample.pdf, lambertPdf(envDir, normal));
-    var scale = (1f - f) * diffuse * evalLambert(envSample) * lambertWeight;
-    let h = normalize(wo + envSample.wi);
-    let specWeight = powerHeuristic(envSample.pdf, specularPdf(wo, h, a, a));
-    scale += f * specular * evalSpecular(wo, envSample, a, a) * specWeight;
-    let shadowRay = Ray(origin, envDir);
-    let shadowThroughput = vec4<f32>(scale * colorThroughput, hit.deferredRay.throughput.w);
-    let deferredShadowRay = DeferredRay(shadowRay, shadowThroughput);
-    emitShadowRay(deferredShadowRay);
+  if (SAMPLE_ENV_LIGHT) {
+    let envSample = sampleEnv(si.basis);
+    if (dot(envSample.wi, m) > 0f && envSample.wi.z > 0f) {
+      let deferredShadowRay = createMaterialSampleRay(si, envSample, f, hit.deferredRay.throughput);
+      emitShadowRay(deferredShadowRay);
+    }
   }
 }

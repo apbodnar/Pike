@@ -180,7 +180,7 @@ class Canvas2DTextureWriter {
       ${Math.floor(255 * color[0])},
       ${Math.floor(255 * color[1])},
       ${Math.floor(255 * color[2])},
-    0)`;
+      ${color[3]})`;
     this.ctx.fillRect(0, 0, this.canvasElement.width, this.canvasElement.height);
   }
 
@@ -255,7 +255,7 @@ class WebGLTextureWriter {
       vec2 uv = texCoord;
       uv.y = uv.y;
       vec4 c = texture(tex, uv);
-      fragColor = vec4(c.rgb * c.a, 1.0);
+      fragColor = vec4(c);
     }`;
     let fs = getShader(fsStr, "FRAGMENT_SHADER");
     let vs = getShader(vsStr, "VERTEX_SHADER");

@@ -74,7 +74,7 @@ export class ShadeMissPass {
     computePass.setBindGroup(0, this.shadingBindGroup);
     computePass.setBindGroup(1, this.rayStateBindGroup);
     computePass.setBindGroup(2, this.collisionBindGroup);
-    const numWorkgroups = Math.ceil(this.cameraPass.resolution[0] * this.cameraPass.resolution[1] / workGroupSize);
+    const numWorkgroups = Math.ceil(this.cameraPass.batchSize / workGroupSize);
     computePass.dispatchWorkgroups(numWorkgroups);
     computePass.end();
   }

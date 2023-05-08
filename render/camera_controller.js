@@ -47,7 +47,6 @@ export class CameraController {
     document.addEventListener("keyup", (e) => {
       if (keySet.has(e.key)) {
         this.activeEvents.delete(e.key);
-        
       }
     });
     this._integrate();

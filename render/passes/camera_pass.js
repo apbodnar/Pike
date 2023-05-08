@@ -1,11 +1,12 @@
 import { CameraStateStuct, RenderStateStruct } from "../util/structs.js";
 
 class RenderState {
-  constructor(device, resolution) {
+  constructor(device, resolution, batchSize) {
     this.device = device;
     this.samples = 0;
     this.envTheta = 0;
     this.resolution = resolution;
+    this.batchSize = batchSize;
     this.renderStateBuffer = this.device.createBuffer({
       size: RenderStateStruct.getStride() + resolution[0] * resolution[1] * 4 * 4,
       usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
@@ -40,9 +41,9 @@ class RenderState {
 
   async printDebugInfo() {
     let commandEncoder = this.device.createCommandEncoder();
-    commandEncoder.copyBufferToBuffer( this.renderStateBuffer, 0, this.debugBuffer, 0, 16);
+    commandEncoder.copyBufferToBuffer(this.renderStateBuffer, 0, this.debugBuffer, 0, 16);
     this.device.queue.submit([commandEncoder.finish()]);
-    await this.debugBuffer.mapAsync( GPUMapMode.READ);
+    await this.debugBuffer.mapAsync(GPUMapMode.READ);
     await this.device.queue.onSubmittedWorkDone();
     const b = new Uint32Array(this.debugBuffer.getMappedRange());
     console.log(b);
@@ -76,14 +77,15 @@ class RenderState {
 }
 
 export class CameraPass {
-  constructor(device, resolution) {
+  constructor(device, resolution, batchSize) {
     this.device = device;
     this.resolution = resolution;
+    this.batchSize = batchSize;
     this.cameraStateBuffer = this.device.createBuffer({
       size: CameraStateStuct.getStride(),
       usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.UNIFORM,
     });
-    this.renderState = new RenderState(this.device, this.resolution);
+    this.renderState = new RenderState(this.device, this.resolution, this.batchSize);
     this.cameraBuffer = this.createCameraRayBuffer();
     this.dimensionBuffer = this.createUniformBuffer();
   }
@@ -94,8 +96,8 @@ export class CameraPass {
 
   createCameraRayBuffer() {
     const db = this.device.createBuffer({
-      // 256 byte aligned ray count + 48 byte aligned ray buffer * (1 bounce ray + 1 shadow ray)
-      size: this.resolution[0] * this.resolution[1] * 12 * 4 * 2,
+      // 256 byte aligned ray count + 48 byte aligned ray buffer * (1 bounce ray + 1 shadow ray + 1 light ray)
+      size: this.batchSize * 12 * 4 * 3,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
     return db;
@@ -214,8 +216,7 @@ export class CameraPass {
     computePass.setBindGroup(0, this.bindGroup);
     computePass.setBindGroup(1, this.cameraStateBindGroup);
     computePass.dispatchWorkgroups(
-      Math.ceil(this.resolution[0] / workGroupSize),
-      Math.ceil(this.resolution[1] / 1),
+      Math.ceil(this.batchSize / workGroupSize)
     );
     computePass.end();
   }

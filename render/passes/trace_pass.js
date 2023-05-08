@@ -45,8 +45,8 @@ export class TracePass {
 
   initMissBuffer() {
     this.missBuffer = this.device.createBuffer({
-      // 256 byte aligned ray count + 48 byte aligned ray buffer * (1 bounce ray + 1 shadow ray) 
-      size: this.cameraPass.resolution[0] * this.cameraPass.resolution[1] * 12 * 4 * 2,
+      // 256 byte aligned ray count + 48 byte aligned ray buffer * (1 bounce ray + 1 shadow ray + 1 light ray) 
+      size: this.cameraPass.resolution[0] * this.cameraPass.resolution[1] * 12 * 4 * 3,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
   }
@@ -247,7 +247,7 @@ export class TracePass {
     computePass.setBindGroup(0, this.bvhBindGroup);
     computePass.setBindGroup(1, this.collisionBindGroup);
     computePass.setBindGroup(2, this.rayStateBindGroup);
-    const numWorkgroups = Math.ceil(2 * this.cameraPass.resolution[0] * this.cameraPass.resolution[1] / workGroupSize);
+    const numWorkgroups = Math.ceil(2 * this.cameraPass.batchSize / (workGroupSize));
     computePass.dispatchWorkgroups(numWorkgroups);
     computePass.end();
   }
