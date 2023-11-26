@@ -31,7 +31,7 @@ class ImageLayer {
     return this.height - this.currentHeight;
   }
 
-  fitImage(image, writer) {
+  fitImage(image) {
     // Scan row by row.
     while (image.height <= this.remainingHeight()) {
       if (image.width > this.remainingWidth()) {
