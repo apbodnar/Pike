@@ -212,10 +212,10 @@ export class VertexIndexStruct extends WGSLPackedStruct {
 export class VertexAttributeStruct extends WGSLPackedStruct {
   static get desc() {
     return [
-      { name: "tangent", type: Float32Array, count: 3 },
-      { name: "bitangent", type: Float32Array, count: 3 },
-      { name: "normal", type: Float32Array, count: 3 },
-      { name: "uv", type: Float32Array, count: 2 },
+      { name: "tangent", type: Uint32Array, count: 1 }, // 4 x 8 bit quantization
+      { name: "bitangent", type: Uint32Array, count: 1 },
+      { name: "normal", type: Uint32Array, count: 1 },
+      { name: "uv", type: Uint32Array, count: 1 },
     ];
   }
 }

@@ -1,4 +1,4 @@
-html, body, canvas {
+html, body {
     height: 100%;
     font-family: monospace;
 }
@@ -9,6 +9,9 @@ body {
     overflow: hidden;
     background: #000;
     color: white;
+    display: flex;
+    justify-content: center;
+    flex-direction: column;
 }
 
 form {
@@ -36,6 +39,7 @@ label {
 }
 
 canvas {
+    width: 100%;
     border: none;
 }
 

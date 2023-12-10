@@ -24,6 +24,13 @@ struct VertexPositions {
   pos: array<vec3<f32>>,
 };
 
+struct QuantizedVertexAttribute {
+  tangent: u32,
+  bitangent: u32,
+  normal: u32,
+  uv: u32,
+};
+
 struct VertexAttribute {
   tangent: vec3<f32>,
   bitangent: vec3<f32>,
@@ -32,7 +39,7 @@ struct VertexAttribute {
 };
 
 struct VertexAttributes {
-  attributes: array<VertexAttribute>,
+  attributes: array<QuantizedVertexAttribute>,
 };
 
 struct TextureTransform {
@@ -368,11 +375,31 @@ fn applyTextureTransform(uv: vec2<f32>, t: TextureTransform) -> vec2<f32> {
 
 fn interpolateVertexAttribute(tri: Triangle, bary: vec3<f32>) -> VertexAttribute {
   //var attr: array<VertexAttribute, 3> = attrs.attributes[i];
+  let tangents = mat3x3<f32>(
+    unpack4x8snorm(attrs.attributes[tri.i1].tangent).xyz, 
+    unpack4x8snorm(attrs.attributes[tri.i2].tangent).xyz, 
+    unpack4x8snorm(attrs.attributes[tri.i3].tangent).xyz
+  );
+  let bitangents = mat3x3<f32>(
+    unpack4x8snorm(attrs.attributes[tri.i1].bitangent).xyz, 
+    unpack4x8snorm(attrs.attributes[tri.i2].bitangent).xyz, 
+    unpack4x8snorm(attrs.attributes[tri.i3].bitangent).xyz
+  );
+  let normals = mat3x3<f32>(
+    unpack4x8snorm(attrs.attributes[tri.i1].normal).xyz, 
+    unpack4x8snorm(attrs.attributes[tri.i2].normal).xyz, 
+    unpack4x8snorm(attrs.attributes[tri.i3].normal).xyz
+  );
+  let uvs = mat3x2<f32>(
+    unpack2x16snorm(attrs.attributes[tri.i1].uv),
+    unpack2x16snorm(attrs.attributes[tri.i2].uv),
+    unpack2x16snorm(attrs.attributes[tri.i3].uv)
+  );
   return VertexAttribute(
-    normalize(mat3x3<f32>(attrs.attributes[tri.i1].tangent, attrs.attributes[tri.i2].tangent, attrs.attributes[tri.i3].tangent) * bary),
-    normalize(mat3x3<f32>(attrs.attributes[tri.i1].bitangent, attrs.attributes[tri.i2].bitangent, attrs.attributes[tri.i3].bitangent) * bary),
-    normalize(mat3x3<f32>(attrs.attributes[tri.i1].normal, attrs.attributes[tri.i2].normal, attrs.attributes[tri.i3].normal) * bary),
-    mat3x2<f32>(attrs.attributes[tri.i1].uv, attrs.attributes[tri.i2].uv, attrs.attributes[tri.i3].uv) * bary,
+    normalize(tangents * bary),
+    normalize(bitangents * bary),
+    normalize(normals * bary),
+    uvs * bary,
   );
 }
 

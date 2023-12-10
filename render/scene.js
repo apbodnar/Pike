@@ -2,7 +2,7 @@ import { GLTFLoader } from "./util/gltf_loader.js";
 import { Vec3, Vec } from './util/vector.js'
 import * as utils from './util/utility.js'
 import { TexturePacker } from "./util/texture_packer.js";
-import { BoundingBox } from "./bvh.js";
+import { BoundingBox } from "./primitives.js";
 
 export class Scene {
   constructor() {
@@ -12,7 +12,7 @@ export class Scene {
     this.materialIds = {};
     this.texturePacker = null;
   }
-  
+
   async load(uri) {
     this.desc = await (await fetch(uri)).json();
 
@@ -51,7 +51,7 @@ export class Scene {
       this.texturePacker.addTexture(material.getNormalTexture()) :
       this.texturePacker.addColor([0.5, 0.5, 1]);
     const normMapTransform = [1, 1, 0, 0];
-    const emitMap = material.hasEmissiveTexture() ? 
+    const emitMap = material.hasEmissiveTexture() ?
       this.texturePacker.addTexture(material.getEmissiveTexture(), true) :
       this.texturePacker.addColor(material.getEmissive());
     const emitMapTransform = [1, 1, 0, 0];
@@ -94,9 +94,25 @@ export class Scene {
   _computeBounds(primitive) {
     const indexCount = primitive.indexCount();
     const box = new BoundingBox();
-    for (let i = 0; i < indexCount; i ++) {
+    for (let i = 0; i < indexCount; i++) {
       box.addVertex();
     }
+  }
+
+  _quantizeVec3ToInt(vec) {
+    const bytes = new Int8Array(4);
+    // This is lazy/wrong
+    bytes[0] = vec[0] * (vec[0] > 0 ? 127 : 128);
+    bytes[1] = vec[1] * (vec[1] > 0 ? 127 : 128);
+    bytes[2] = vec[2] * (vec[2] > 0 ? 127 : 128);
+    return new Uint32Array(bytes.buffer);
+  }
+
+  _quantizeVec2ToInt(vec) {
+    const shorts = new Int16Array(2);
+    shorts[0] = vec[0] * 32767;
+    shorts[1] = vec[1] * 32767;
+    return new Uint32Array(shorts.buffer);
   }
 
   _createBuffers() {
@@ -138,17 +154,17 @@ export class Scene {
           const attrCount = primitive.attributeCount();
           offset += attrCount;
           for (let i = 0; i < attrCount; i++) {
-            const pos =  this._applyVectorTransforms(primitive.positionAt(i), group.transforms);
+            const pos = this._applyVectorTransforms(primitive.positionAt(i), group.transforms);
             const normal = this._applyVectorTransforms(primitive.normalAt(i), group.transforms, true);
             const signedTangent = primitive.tangentAt(i);
             const tangent = this._applyVectorTransforms(signedTangent.slice(0, 3), group.transforms, true);
             const bitangent = Vec3.normalize(Vec3.scale(Vec3.cross(primitive.normalAt(i), primitive.tangentAt(i)), signedTangent[3] || 1));
             this.attributes.push({
               pos,
-              tangent: Vec3.normalize(tangent),
-              normal: Vec3.normalize(normal),
-              uv: primitive.uvAt(i),
-              bitangent,
+              tangent: this._quantizeVec3ToInt(Vec3.normalize(tangent)),
+              bitangent: this._quantizeVec3ToInt(bitangent),
+              normal: this._quantizeVec3ToInt(Vec3.normalize(normal)),
+              uv: this._quantizeVec2ToInt(primitive.uvAt(i)),
             });
             if (box) {
               box.addVertex(pos);
