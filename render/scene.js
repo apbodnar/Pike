@@ -1,4 +1,5 @@
 import { GLTFLoader } from "./util/gltf_loader.js";
+import { HDRLoader } from "./util/hdr_loader.js";
 import { Vec3, Vec } from './util/vector.js'
 import * as utils from './util/utility.js'
 import { TexturePacker } from "./util/texture_packer.js";
@@ -35,6 +36,7 @@ export class Scene {
     this._createBuffers();
     console.log('Num lights: ', this.lights.length);
     this.env = await utils.getImage(this.desc.environment);
+    //this.env = await HDRLoader.load('environment/adams_place_bridge_2k.hdr')
     return this;
   }
 

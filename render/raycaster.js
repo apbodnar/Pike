@@ -39,7 +39,7 @@ export class Raycaster {
 
   processLeaf(ray, root) {
     let res = MAX_T;
-    let tris = root.getTriangles();
+    let tris = root.leafTriangles;
     for (let i = 0; i < tris.length; i++) {
       let tmp = this.rayTriangleIntersect(ray, tris[i])
       if (tmp < res) {

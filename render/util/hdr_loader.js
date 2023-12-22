@@ -12,8 +12,21 @@ export class HDRLoader {
 
   decodeRLE(rleData) {
     const array = [];
-    for 
+
   }
+
+  /**
+   *  New run-length encoded
+    In this format, the four scanline components (three primaries and
+    exponent) are separated for better compression using adaptive
+    run-length encoding (described by Glassner in Chapter II.8 of
+    Graphics Gems II [Arvo91,p.89]). The record begins with an
+    unnormalized pixel having two bytes equal to 2, followed by the
+    upper byte and the lower byte of the scanline length (which must
+    be less than 32768). A run is indicated by a byte with its highorder bit set, corresponding to a count with excess 128. A nonrun is indicated with a byte less than 128. The maximum
+    compression ratio using this scheme is better than 100:1, but
+    typical performance for Radiance pictures is more like 2:1.
+  */
 
   parse() {
     const lines = []
@@ -21,7 +34,7 @@ export class HDRLoader {
     let line = '';
     let previous = ''
     let idx = 0;
-    for(;;idx++) {
+    for (; ; idx++) {
       const byte = this.view.getInt8(idx);
       const char = String.fromCharCode(byte);
       if (char === '\n') {
@@ -38,7 +51,7 @@ export class HDRLoader {
     }
     // scan the dimensions
     let dimLine = ''
-    for(;;idx++) {
+    for (; ; idx++) {
       const byte = this.view.getInt8(idx);
       const char = String.fromCharCode(byte);
       if (char === '\n') {

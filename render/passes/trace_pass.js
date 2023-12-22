@@ -207,7 +207,7 @@ export class TracePass {
     time = performance.now();
     let bvhArray = this.bvh.serializeTree();
     console.log("BVH serialized in", (performance.now() - time) / 1000.0, " seconds");
-    const indexBuffer = new WGSLPackedStructArray(VertexIndexStruct, this.bvh.numLeafTris() * 3);
+    const indexBuffer = new WGSLPackedStructArray(VertexIndexStruct, this.bvh.getNumLeafTris() * 3);
     const bvhBuffer = new WGSLPackedStructArray(BVHNodeStruct, bvhArray.length);
     const vertexBuffer = new WGSLPackedStructArray(VertexPositionStruct, this.scene.attributes.length);
     let triIndex = 0;
@@ -223,7 +223,7 @@ export class TracePass {
         boxMax: node.bounds.max,
       }));
       if (node.leaf) {
-        let tris = node.getTriangles();
+        let tris = node.leafTriangles;
         triIndex += tris.length;
         for (let j = 0; j < tris.length; j++) {
           indexBuffer.push(new VertexIndexStruct(tris[j].desc));
