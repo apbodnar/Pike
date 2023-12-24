@@ -6,6 +6,7 @@ import {
 } from "../util/structs.js";
 import { BVH } from '../bvh.js'
 import { WideBVH } from "../wide_bvh.js";
+import { Vec3 } from "../util/vector.js";
 
 export class TracePass {
   constructor(device, cameraPass, scene) {
@@ -198,30 +199,43 @@ export class TracePass {
     return this.bvh;
   }
 
+  #makeNormalizer(bounds) {
+    const min = bounds.min;
+    const span = Vec3.sub(bounds.max, bounds.min);
+    const longest = Math.max(span[0], span[1], span[2]);
+
+    return (vec) => {
+      const toCenter = Vec3.add(min, Vec3.scale(span, 0.5));
+      return Vec3.scale(Vec3.sub(vec, toCenter), 2 / longest); 
+    }
+  }
+
   initBVHBuffer() {
     let time = performance.now();
     console.log("Building BVH:", this.scene.indices.length, "triangles");
     time = performance.now();
-    this.bvh = new WideBVH(this.scene);
+    // this.bvh = new WideBVH(this.scene);
     this.bvh = new BVH(this.scene);
     console.log("BVH built in ", (performance.now() - time) / 1000.0, " seconds.  Depth: ", this.bvh.depth);
     time = performance.now();
-    let bvhArray = this.bvh.serializeTree();
+    const bvhArray = this.bvh.serializeTree();
     console.log("BVH serialized in", (performance.now() - time) / 1000.0, " seconds");
     const indexBuffer = new WGSLPackedStructArray(VertexIndexStruct, this.bvh.getNumLeafTris() * 3);
     const bvhBuffer = new WGSLPackedStructArray(BVHNodeStruct, bvhArray.length);
     const vertexBuffer = new WGSLPackedStructArray(VertexPositionStruct, this.scene.attributes.length);
+    const normalize = this.#makeNormalizer(this.bvh.root.bounds);
     let triIndex = 0;
     for (let i = 0; i < bvhArray.length; i++) {
       let e = bvhArray[i];
       let node = e.node;
+      
       bvhBuffer.push(new BVHNodeStruct({
         index: i,
         left: node.leaf ? -1 : e.left,
         right: node.leaf ? -1 : e.right,
         triangles: node.leaf ? this.maskTriIndex(triIndex, node.getleafSize()) : -1,
-        boxMin: node.bounds.min,
-        boxMax: node.bounds.max,
+        boxMin: normalize(node.bounds.min),
+        boxMax: normalize(node.bounds.max),
       }));
       if (node.leaf) {
         let tris = node.leafTriangles;
@@ -233,7 +247,8 @@ export class TracePass {
     }
 
     for (let attribute of this.scene.attributes) {
-      vertexBuffer.push(new VertexPositionStruct(attribute));
+      const pos = normalize(attribute.pos);
+      vertexBuffer.push(new VertexPositionStruct({pos}));
     }
     this.triangleBuffer = indexBuffer.createWGPUBuffer(this.device, GPUBufferUsage.STORAGE);
     this.bvhBuffer = bvhBuffer.createWGPUBuffer(this.device, GPUBufferUsage.STORAGE);
