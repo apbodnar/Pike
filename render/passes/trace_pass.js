@@ -5,6 +5,7 @@ import {
   WGSLPackedStructArray,
 } from "../util/structs.js";
 import { BVH } from '../bvh.js'
+import { WideBVH } from "../wide_bvh.js";
 
 export class TracePass {
   constructor(device, cameraPass, scene) {
@@ -50,7 +51,6 @@ export class TracePass {
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
   }
-
 
   initCollisionBindGroup() {
     this.collisionBindGroup = this.createCollisionBindGroup(this.pipeline.getBindGroupLayout(1), "trace");
@@ -202,6 +202,7 @@ export class TracePass {
     let time = performance.now();
     console.log("Building BVH:", this.scene.indices.length, "triangles");
     time = performance.now();
+    this.bvh = new WideBVH(this.scene);
     this.bvh = new BVH(this.scene);
     console.log("BVH built in ", (performance.now() - time) / 1000.0, " seconds.  Depth: ", this.bvh.depth);
     time = performance.now();
