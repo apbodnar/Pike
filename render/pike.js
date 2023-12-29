@@ -47,7 +47,7 @@ class PikeRenderer {
       this.focalDepth = parseFloat(e.target.value);
       this.renderState.resetSamples();
     }, false);
-    this.apertureSize = 0.02;
+    this.apertureSize = 0.0;
     this.elements.apertureSize.addEventListener('input', (e) => {
       this.apertureSize = parseFloat(e.target.value);
       this.renderState.resetSamples();
@@ -93,6 +93,7 @@ class PikeRenderer {
     this.adapter = await navigator.gpu.requestAdapter();
     this.device = await this.adapter.requestDevice({
       requiredLimits: { maxStorageBufferBindingSize: 2147483644 },
+      requiredFeatures: ['shader-f16'],
     });
     this.elements.canvasElement.width = this.resolution[0];
     this.elements.canvasElement.height = this.resolution[1];

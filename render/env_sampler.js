@@ -23,6 +23,7 @@ export class EnvironmentGenerator {
     this.uvMap = null
     //this._sortPixels();
     this.createLuminanceHistogram();
+    console.log("Brightest env texel:", this.brightestTexel);
     // this.paintSortedDebugImage();
     //createLuminanceHistogram
   }

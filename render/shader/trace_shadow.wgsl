@@ -21,12 +21,11 @@ struct VertexPositions {
 };
 
 struct Node {
-  index: i32,
-  left: i32,
-  right: i32,
+  childBaseIdx: i32,
   triangles: i32,
-  boxMin: vec3<f32>,
-  boxMax: vec3<f32>,
+  xRangeMask: u32,
+  yRangeMask: u32,
+  zRangeMask: u32,
 };
 
 struct BVH {
@@ -34,7 +33,7 @@ struct BVH {
 };
 
 struct Triangles {
-  triangles: array<Triangle>,
+  elements: array<Triangle>,
 };
 
 struct Ray {
@@ -82,8 +81,11 @@ struct RenderState {
 
 fn rayBoxIntersect(node: Node, ray: Ray) -> f32 {
   let inverse = 1.0 / ray.dir;
-  let t1 = (node.boxMin - ray.origin) * inverse;
-  let t2 = (node.boxMax - ray.origin) * inverse;
+  let xRange = unpack2x16snorm(node.xRangeMask);
+  let yRange = unpack2x16snorm(node.yRangeMask);
+  let zRange = unpack2x16snorm(node.zRangeMask);
+  let t2 = (vec3<f32>(xRange.y, yRange.y, zRange.y) - ray.origin) * inverse;
+  let t1 = (vec3<f32>(xRange.x, yRange.x, zRange.x) - ray.origin) * inverse;
   let minT = min(t1, t2);
   let maxT = max(t1, t2);
   let tMax = min(min(maxT.x, maxT.y), maxT.z);
@@ -116,7 +118,7 @@ fn processLeaf(leaf: Node, ray: Ray, result: ptr<function, Hit>){
   loop {
     if (i >= leafSize) { break;}
     var bary = vec3<f32>();
-    let tri: Triangle = triangles.triangles[baseIdx + i];
+    let tri: Triangle = triangles.elements[baseIdx + i];
     let res: f32 = rayTriangleIntersect(ray, tri, &bary);
     if (res < (*result).t) {
       (*result).index = baseIdx + i;
@@ -156,8 +158,8 @@ fn intersectScene(deferredRay: DeferredRay, tid: u32) -> Hit {
         return result;
       }
     } else {
-      let leftIndex = current.left;
-      let rightIndex = current.right;
+      let leftIndex = current.childBaseIdx;
+      let rightIndex = leftIndex + 1;
       let leftHit = rayBoxIntersect(bvh.nodes[leftIndex], deferredRay.ray);
       let rightHit = rayBoxIntersect(bvh.nodes[rightIndex], deferredRay.ray);
       if (leftHit < result.t && rightHit < result.t) {

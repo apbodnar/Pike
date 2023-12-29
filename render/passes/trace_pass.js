@@ -210,6 +210,13 @@ export class TracePass {
     }
   }
 
+  quantizeVec2ToInt(vec) {
+    const shorts = new Int16Array(2);
+    shorts[0] = vec[0] * (vec[0] > 0 ? 32767 : 32768);
+    shorts[1] = vec[1] * (vec[1] > 0 ? 32767 : 32768);
+    return new Uint32Array(shorts.buffer);
+  }
+
   initBVHBuffer() {
     let time = performance.now();
     console.log("Building BVH:", this.scene.indices.length, "triangles");
@@ -228,14 +235,14 @@ export class TracePass {
     for (let i = 0; i < bvhArray.length; i++) {
       let e = bvhArray[i];
       let node = e.node;
-      
+      const min = normalize(node.bounds.min);
+      const max = normalize(node.bounds.max);
       bvhBuffer.push(new BVHNodeStruct({
-        index: i,
-        left: node.leaf ? -1 : e.left,
-        right: node.leaf ? -1 : e.right,
+        childBaseIdx: node.leaf ? -1 : e.left,
         triangles: node.leaf ? this.maskTriIndex(triIndex, node.getleafSize()) : -1,
-        boxMin: normalize(node.bounds.min),
-        boxMax: normalize(node.bounds.max),
+        xMask: this.quantizeVec2ToInt([max[0], min[0]]),
+        yMask: this.quantizeVec2ToInt([max[1], min[1]]),
+        zMask: this.quantizeVec2ToInt([max[2], min[2]]),
       }));
       if (node.leaf) {
         let tris = node.leafTriangles;

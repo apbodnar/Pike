@@ -42,11 +42,6 @@ struct VertexAttributes {
   attributes: array<QuantizedVertexAttribute>,
 };
 
-struct TextureTransform {
-  scale: vec2<f32>,
-  trans: vec2<f32>,
-}
-
 struct LightBox {
   min: vec3<f32>,
   max: vec3<f32>,
@@ -61,10 +56,6 @@ struct MaterialIndex {
   metRoughMap: i32,
   normMap: i32,
   emitMap: i32,
-  diffMapTransform: TextureTransform,
-  metRoughMapTransform: TextureTransform,
-  normMapTransform: TextureTransform,
-  emitMapTransform: TextureTransform,
 };
 
 struct MaterialIndices {
@@ -190,20 +181,20 @@ fn getSurfaceInteraction(hit: Hit) -> SurfaceInteraction {
   let tri = triangles.triangles[hit.index];
   let attr = interpolateVertexAttribute(tri, hit.bary);
   let matIdx = materials.indices[tri.matId];
-  let mapNormal = (textureSampleLevel(atlasTex, atlasSampler, applyTextureTransform(attr.uv, matIdx.normMapTransform), matIdx.normMap, 0f).xyz - vec3<f32>(0.5, 0.5, 0.0)) * vec3<f32>(2.0, 2.0, 1.0);
+  let mapNormal = (textureSampleLevel(atlasTex, atlasSampler, attr.uv, matIdx.normMap, 0f).xyz - vec3<f32>(0.5, 0.5, 0.0)) * vec3<f32>(2.0, 2.0, 1.0);
   var si = SurfaceInteraction();
   si.normal = normalize(mat3x3<f32>(attr.tangent, attr.bitangent, attr.normal) * mapNormal);
   si.origin = ray.origin + ray.dir * (hit.t - EPSILON * 40f);
   // ONB used for computations using the mapped normal;
   si.basis = branchlessONB(si.normal);
   si.wo = -ray.dir * si.basis;
-  let baseColorOpacity = textureSampleLevel(atlasTex, atlasSampler, applyTextureTransform(attr.uv, matIdx.diffMapTransform), matIdx.diffMap, 0f);
+  let baseColorOpacity = textureSampleLevel(atlasTex, atlasSampler, attr.uv, matIdx.diffMap, 0f);
   si.baseColor = baseColorOpacity.rgb;
   si.opacity = baseColorOpacity.a;
-  let metRough = textureSampleLevel(atlasTex, atlasSampler, applyTextureTransform(attr.uv, matIdx.metRoughMapTransform), matIdx.metRoughMap, 0f).xyz;
+  let metRough = textureSampleLevel(atlasTex, atlasSampler, attr.uv, matIdx.metRoughMap, 0f).xyz;
   si.metallic = metRough.b;
   si.roughAlpha = metRough.g * metRough.g;
-  si.emissionColor = textureSampleLevel(atlasTex, atlasSampler, applyTextureTransform(attr.uv, matIdx.emitMapTransform), matIdx.emitMap, 0f).xyz;
+  si.emissionColor = textureSampleLevel(atlasTex, atlasSampler, attr.uv, matIdx.emitMap, 0f).xyz;
   si.specularColor = mix(vec3<f32>(1f), si.baseColor, si.metallic);
   return si;
 }
@@ -367,10 +358,6 @@ fn schlick(cosTheta: f32, ior: f32) -> f32 {
 fn powerHeuristic(pdf0: f32, pdf1: f32) -> f32 {
   let pdf02 = pdf0 * pdf0;
   return (pdf02)/(pdf02 + pdf1 * pdf1);
-}
-
-fn applyTextureTransform(uv: vec2<f32>, t: TextureTransform) -> vec2<f32> {
-  return uv * t.scale + t.trans;
 }
 
 fn interpolateVertexAttribute(tri: Triangle, bary: vec3<f32>) -> VertexAttribute {

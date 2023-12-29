@@ -9,9 +9,8 @@ export class BVH {
   #numLeafTris = 0;
   #largestLeaf = 0;
 
-  constructor(scene, exponent) {
+  constructor(scene) {
     this.triangles = scene.indices.map(desc => new Triangle(desc, scene.attributes));
-    this.exponent = exponent ?? 1;
     const xRefs = this.triangles.map(
       (tri, i) => new Reference(i, new BoundingBox().addTriangle(tri))
     );
@@ -35,12 +34,11 @@ export class BVH {
       return;
     }
 
-    const forceAxis = (depth % this.exponent === 0) ? -1 : root.splitAxis;
     const [left, right] = BVH.#splitNode(root);
-    root.left = new Node(left, this.triangles, root.rootNode, forceAxis);
+    root.left = new Node(left, this.triangles, root.rootNode);
     this.#createChildNodes(root.left, depth + 1);
 
-    root.right = new Node(right, this.triangles, root.rootNode, forceAxis);
+    root.right = new Node(right, this.triangles, root.rootNode);
     this.#createChildNodes(root.right, depth + 1);
   }
 
@@ -93,8 +91,8 @@ export class BVH {
       if (axis === splitAxis) {
         continue;
       }
-      leftRefs[axis] = new Array(leftRefs[splitAxis].length)
-      rightRefs[axis] = new Array(rightRefs[splitAxis].length)
+      leftRefs[axis] = new Array(leftRefs[splitAxis].length);
+      rightRefs[axis] = new Array(rightRefs[splitAxis].length);
       let li = 0, ri = 0;
       for (let j = 0; j < axisRefs[axis].length; j++) {
         let idx = axisRefs[axis][j];
@@ -118,7 +116,7 @@ export class Node {
   right = null;
   leaf = false;
 
-  constructor(axisRefs, triangles, rootNode, forceAxis) {
+  constructor(axisRefs, triangles, rootNode) {
     this.count = axisRefs[0].length;
     this.rootNode = rootNode ?? this;
     this.triangles = triangles;
@@ -126,7 +124,7 @@ export class Node {
     for (const ref of axisRefs[0]) {
       this.bounds.addBoundingBox(ref.bounds);
     }
-    let split = this.getObjectSplit(axisRefs, forceAxis);
+    let split = this.getObjectSplit(axisRefs);
     const checkSpatialSplit = false;//(split.intersectionArea / this.rootNode.bounds.getSurfaceArea()) > SPLIT_ALPHA;
     if (checkSpatialSplit) {
       const spatialSplit = this.getSpatialSplit(split);
@@ -224,9 +222,8 @@ export class Node {
     });
   }
 
-  getObjectSplit(axisRefs, forceAxis) {
-    const axes = forceAxis > -1 ? [forceAxis] :  [0, 1, 2];
-    const split = this.#computeSplit(axisRefs, axes);
+  getObjectSplit(axisRefs) {
+    const split = this.#computeSplit(axisRefs, [0, 1, 2]);
     split.axisRefs = axisRefs;
     return split;
   }

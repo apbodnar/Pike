@@ -160,12 +160,12 @@ export class WGSLPackedStructArray {
 export class BVHNodeStruct extends WGSLPackedStruct {
   static get desc() {
     return [
-      { name: "index", type: Int32Array, count: 1 },
-      { name: "left", type: Int32Array, count: 1 },
-      { name: "right", type: Int32Array, count: 1 },
-      { name: "triangles", type: Int32Array, count: 1 },
-      { name: "boxMin", type: Float32Array, count: 3 },
-      { name: "boxMax", type: Float32Array, count: 3 },
+      { name: "childBaseIdx", type: Int32Array, count: 1 },
+      { name: "triangles", type: Int32Array, count: 1 }, 
+      { name: "xMask", type: Uint32Array, count: 1 },
+      { name: "yMask", type: Uint32Array, count: 1 },
+      { name: "zMask", type: Uint32Array, count: 1 },
+
     ];
   }
 }
@@ -255,10 +255,6 @@ export class MaterialIndexStruct extends WGSLPackedStruct {
       { name: "metRoughMap", type: Int32Array, count: 1 },
       { name: "normMap", type: Int32Array, count: 1 },
       { name: "emitMap", type: Int32Array, count: 1 },
-      { name: "diffMapTransform", type: Float32Array, count: 4 },
-      { name: "metRoughMapTransform", type: Float32Array, count: 4 },
-      { name: "normMapTransform", type: Float32Array, count: 4 },
-      { name: "emitMapTransform", type: Float32Array, count: 4 },
     ];
   }
 }

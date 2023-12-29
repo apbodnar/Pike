@@ -7,6 +7,7 @@ export class Raycaster {
   constructor(bvh) {
     this.bvh = bvh;
     this.lastMeshDebug = null;
+    this.normalizer = this.#makeNormalizer(bvh.root.bounds);
   }
 
   rayTriangleIntersect(ray, tri) {
@@ -35,6 +36,17 @@ export class Raycaster {
       return t;
     }
     return MAX_T;
+  }
+
+  #makeNormalizer(bounds) {
+    const min = bounds.min;
+    const span = Vec3.sub(bounds.max, bounds.min);
+    const longest = Math.max(span[0], span[1], span[2]);
+
+    return (ray) => {
+      const toCenter = Vec3.add(min, Vec3.scale(span, 0.5));
+      return {origin: Vec3.scale(Vec3.sub(ray.origin, toCenter), 2 / longest), dir: Vec3.scale(ray.dir, 1)}; 
+    }
   }
 
   processLeaf(ray, root) {
@@ -107,7 +119,8 @@ export class Raycaster {
     return closest;
   }
 
-  cast(ray) {
+  cast(inRay) {
+    const ray =  this.normalizer(inRay);
     return this.traverse(ray, this.bvh.root, MAX_T);
   }
 }
