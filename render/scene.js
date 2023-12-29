@@ -113,7 +113,7 @@ export class Scene {
   _quantizeVec2ToInt(vec) {
     const shorts = new Int16Array(2);
     shorts[0] = vec[0] * (vec[0] > 0 ? 32767 : 32768);
-    shorts[1] = vec[1] * (vec[0] > 0 ? 32767 : 32768);
+    shorts[1] = vec[1] * (vec[1] > 0 ? 32767 : 32768);
     return new Uint32Array(shorts.buffer);
   }
 

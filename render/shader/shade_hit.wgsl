@@ -17,7 +17,7 @@ struct Triangle {
   i1: i32,
   i2: i32,
   i3: i32,
-  matId: i32,
+  mat_id: i32,
 };
 
 struct VertexPositions {
@@ -84,7 +84,7 @@ struct Hit {
   t: f32,
   index: i32,
   bary: vec3<f32>,
-  deferredRay: DeferredRay,
+  deferred_ray: DeferredRay,
 };
 
 struct HitBuffer {
@@ -93,10 +93,10 @@ struct HitBuffer {
 
 struct RenderState {
   samples: u32,
-  envTheta: f32,
-  numHits: u32,
-  numMisses: u32,
-  numRays: atomic<u32>,
+  env_theta: f32,
+  num_hits: u32,
+  num_misses: u32,
+  num_rays: atomic<u32>,
   numShadowRays: atomic<u32>,
   // Refactor once R/W storage textures exists
   colorBuffer: array<vec4<f32>>,
@@ -144,11 +144,11 @@ struct SurfaceInteraction {
 @group(0) @binding(7) var atlasSampler: sampler;
 // @group(0) @binding(8) var<uniform> lightBoxBuffer: LightBoxBuffer;
 
-@group(1) @binding(0) var<storage, read_write> renderState: RenderState;
-@group(1) @binding(1) var<storage, read_write> rayBuffer: DeferredRayBuffer;
+@group(1) @binding(0) var<storage, read_write> render_state: RenderState;
+@group(1) @binding(1) var<storage, read_write> ray_buffer: DeferredRayBuffer;
 
 @group(2) @binding(0) var<storage, read> triangles: Triangles;
-@group(2) @binding(1) var<storage, read_write> hitBuffer: HitBuffer;
+@group(2) @binding(1) var<storage, read_write> hit_buffer: HitBuffer;
 
 fn hash() -> u32 {
   //Jarzynski and Olano Hash
@@ -177,10 +177,10 @@ fn branchlessONB(n: vec3<f32>) -> mat3x3<f32> {
 }
 
 fn getSurfaceInteraction(hit: Hit) -> SurfaceInteraction {
-  let ray = hit.deferredRay.ray;
+  let ray = hit.deferred_ray.ray;
   let tri = triangles.triangles[hit.index];
   let attr = interpolateVertexAttribute(tri, hit.bary);
-  let matIdx = materials.indices[tri.matId];
+  let matIdx = materials.indices[tri.mat_id];
   let mapNormal = (textureSampleLevel(atlasTex, atlasSampler, attr.uv, matIdx.normMap, 0f).xyz - vec3<f32>(0.5, 0.5, 0.0)) * vec3<f32>(2.0, 2.0, 1.0);
   var si = SurfaceInteraction();
   si.normal = normalize(mat3x3<f32>(attr.tangent, attr.bitangent, attr.normal) * mapNormal);
@@ -201,7 +201,7 @@ fn getSurfaceInteraction(hit: Hit) -> SurfaceInteraction {
 
 fn envPdf(dir: vec3<f32>) -> f32 {
   let dims = vec2<f32>(envRes);
-  let u = (1f + renderState.envTheta + atan2(dir.z, dir.x) / M_TAU) % 1f;
+  let u = (1f + render_state.env_theta + atan2(dir.z, dir.x) / M_TAU) % 1f;
   let v = acos(dir.y) * INV_PI;
   let c = vec2<i32>(vec2<f32>(u, v) * dims);
   let phi = v * M_PI;
@@ -216,7 +216,7 @@ fn sampleEnv(ONB: mat3x3<f32>) -> Sample {
   let bin = envLuminance.bins[idx];
   let coordIdx = i32(hash() % u32(bin.h1 - bin.h0)) + bin.h0;
   let coord = envCoords.coords[coordIdx];
-  let u = -renderState.envTheta +((0.5 + f32(coord.x)) / dims.x);
+  let u = -render_state.env_theta +((0.5 + f32(coord.x)) / dims.x);
   let v = (0.5 + f32(coord.y)) / dims.y;
   let theta = u * M_TAU;
   let phi = v * M_PI;
@@ -390,15 +390,15 @@ fn interpolateVertexAttribute(tri: Triangle, bary: vec3<f32>) -> VertexAttribute
   );
 }
 
-fn emitBounceRay(deferredRay: DeferredRay) {
-  let idx = atomicAdd(&renderState.numRays, 1);
-  rayBuffer.elements[idx] = deferredRay;
+fn emitBounceRay(deferred_ray: DeferredRay) {
+  let idx = atomicAdd(&render_state.num_rays, 1);
+  ray_buffer.elements[idx] = deferred_ray;
 }
 
-fn emitShadowRay(deferredRay: DeferredRay) {
-  let offset = arrayLength(&rayBuffer.elements) / 2;
-  let idx = atomicAdd(&renderState.numShadowRays, 1) + offset;
-  rayBuffer.elements[idx] = deferredRay;
+fn emitShadowRay(deferred_ray: DeferredRay) {
+  let offset = arrayLength(&ray_buffer.elements) / 2;
+  let idx = atomicAdd(&render_state.numShadowRays, 1) + offset;
+  ray_buffer.elements[idx] = deferred_ray;
 }
 
 @compute @workgroup_size(WORKGROUP_SIZE, 1, 1)
@@ -406,16 +406,16 @@ fn main(
   @builtin(global_invocation_id) GID : vec3<u32>,
 ) {
   let tid = GID.x;
-  if (tid >= renderState.numHits) {
+  if (tid >= render_state.num_hits) {
     return;
   }
-  let hit = hitBuffer.elements[tid];
-  let ray = hit.deferredRay.ray;
-  let coordMask = bitcast<u32>(hit.deferredRay.throughput.w);
+  let hit = hit_buffer.elements[tid];
+  let ray = hit.deferred_ray.ray;
+  let coordMask = bitcast<u32>(hit.deferred_ray.throughput.w);
   let colorIdx = coordMask & 0x0fffffffu;
   let rayType = coordMask & 0xf0000000u;
-  var colorThroughput = hit.deferredRay.throughput.rgb;
-  seed = (GID.x * 1973u + colorIdx * 9277u + renderState.samples * 26699u) | 1u;
+  var colorThroughput = hit.deferred_ray.throughput.rgb;
+  seed = (GID.x * 1973u + colorIdx * 9277u + render_state.samples * 26699u) | 1u;
   seed = hash();
   
   let si = getSurfaceInteraction(hit);
@@ -423,14 +423,14 @@ fn main(
   if (rand() > si.opacity) {
     let alphaOrigin = ray.origin + ray.dir * (hit.t + EPSILON * 40f);
     let bounceRay = Ray(alphaOrigin, ray.dir);
-    emitBounceRay(DeferredRay(bounceRay, hit.deferredRay.throughput));
+    emitBounceRay(DeferredRay(bounceRay, hit.deferred_ray.throughput));
     return;
   }
   
   // Add the surface's emission if there is any
   if(dot(si.emissionColor, vec3<f32>(1f)) > 0f) {
     let attenuation = max(dot(si.normal, si.basis * si.wo), 0f);
-    renderState.colorBuffer[colorIdx] += vec4<f32>(vec3<f32>(50f) * si.emissionColor * colorThroughput * attenuation, 1.0);
+    render_state.colorBuffer[colorIdx] += vec4<f32>(vec3<f32>(50f) * si.emissionColor * colorThroughput * attenuation, 1.0);
     return;
   }
   // Kill the path if this was a light ray to avoid creating too many bounce rays.
@@ -456,7 +456,7 @@ fn main(
     let dir = si.basis * bsdfSample.wi;
     let weight = select(1f, powerHeuristic(bsdfSample.pdf, envPdf(dir)), SAMPLE_ENV_LIGHT);
     let bounceRay = Ray(si.origin, dir);
-    let bounceThroughput = vec4<f32>(bsdf * colorThroughput * weight, hit.deferredRay.throughput.w);
+    let bounceThroughput = vec4<f32>(bsdf * colorThroughput * weight, hit.deferred_ray.throughput.w);
     let deferredBounceRay = DeferredRay(bounceRay, bounceThroughput);
     emitBounceRay(deferredBounceRay);
   }
@@ -464,7 +464,7 @@ fn main(
   // if (NUM_SCENE_LIGHTS > 0) {
   //   let lightSample = sampleSceneLight(si);
   //   if (lightSample.wi.z > EPSILON) {
-  //     var lightDeferredRay = createMaterialSampleRay(si, lightSample, f, hit.deferredRay.throughput);
+  //     var lightDeferredRay = createMaterialSampleRay(si, lightSample, f, hit.deferred_ray.throughput);
   //     lightDeferredRay.throughput.w = bitcast<f32>(bitcast<u32>(lightDeferredRay.throughput.w) | LIGHT_SAMPLE);
   //     emitBounceRay(lightDeferredRay);
   //   }
@@ -474,7 +474,7 @@ fn main(
   if (SAMPLE_ENV_LIGHT) {
     let envSample = sampleEnv(si.basis);
     if (dot(envSample.wi, m) > 0f && envSample.wi.z > 0f) {
-      let deferredShadowRay = createMaterialSampleRay(si, envSample, f, hit.deferredRay.throughput);
+      let deferredShadowRay = createMaterialSampleRay(si, envSample, f, hit.deferred_ray.throughput);
       emitShadowRay(deferredShadowRay);
     }
   }

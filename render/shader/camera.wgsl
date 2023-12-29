@@ -15,10 +15,10 @@ struct CameraState {
 
 struct RenderState {
   samples: i32,
-  envTheta: f32,
-  numHits: u32,
-  numMisses: u32,
-  numRays: atomic<u32>,
+  env_theta: f32,
+  num_hits: u32,
+  num_misses: u32,
+  num_rays: atomic<u32>,
   numShadowRays: atomic<u32>,
   // Refactor once R/W storage textures exists
   colorBuffer: array<vec4<f32>>,
@@ -38,7 +38,7 @@ struct DeferredRayBuffer {
   elements: array<DeferredRay>,
 };
 
-@group(0) @binding(0) var<storage, read_write> renderState: RenderState;
+@group(0) @binding(0) var<storage, read_write> render_state: RenderState;
 @group(0) @binding(1) var<storage, read_write> cameraBuffer: DeferredRayBuffer;
 
 @group(1) @binding(0) var<uniform> cameraState: CameraState;
@@ -83,11 +83,11 @@ fn main(
   if (any(pixel >= dims)) {
     return;
   }
-  seed = (pixel.x * 1973u + pixel.y * 9277u + u32(renderState.samples) * 26699u) | 1u;
+  seed = (pixel.x * 1973u + pixel.y * 9277u + u32(render_state.samples) * 26699u) | 1u;
   seed = hash();
   cameraRay.ray = createPrimaryRay(vec2<f32>(pixel), vec2<f32>(dims));
   let pdx = pixel.x + dims.x * pixel.y;
   cameraRay.throughput = vec4<f32>(vec3<f32>(1f), bitcast<f32>(idx));
   cameraBuffer.elements[GID.x] = cameraRay;
-  atomicAdd(&renderState.numRays, 1);
+  atomicAdd(&render_state.num_rays, 1);
 }

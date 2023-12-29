@@ -42,7 +42,7 @@ export class BVH {
     this.#createChildNodes(root.right, depth + 1);
   }
 
-  // BFS is slightly slower but generates a tiny bit (2-3%) faster BVH. Guessing because it preserves sibling locality.
+  // BFS is necessary for wide BVH
   serializeTree() {
     let nodes = [];
     let root = { node: this.root, parent: -1 };
@@ -250,7 +250,7 @@ export class Node {
       box.addVertex(max);
     }
 
-    // Place each refs in bins
+    // Place each ref in bins
     for (const ref of objectSplit.axisRefs[objectSplit.axis]) {
       const refMin = ref.bounds.min[objectSplit.axis] - nodeMin;
       const refMax = ref.bounds.max[objectSplit.axis] - nodeMin;
