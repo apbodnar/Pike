@@ -167,7 +167,6 @@ export class CameraPass {
     });
   }
 
-
   createBindGroup(layout) {
     return this.device.createBindGroup({
       layout,

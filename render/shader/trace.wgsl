@@ -7,7 +7,7 @@ const SM_STACK_SIZE = 24;
 var<private> seed: u32;
 var<private> private_stack: array<i32, 32 - SM_STACK_SIZE>;
 var<workgroup> shared_stack: array<array<i32, SM_STACK_SIZE>, WORKGROUP_SIZE>;
-var<workgroup> queue_idx: atomic<u32>;
+var<workgroup> shared_queue_idx: atomic<u32>;
 
 // Keep vertex positions separate from other "attributes" to maximize locality during traversal.
 struct Triangle {
@@ -113,16 +113,16 @@ fn rayTriangleIntersect(ray: Ray, tri: Triangle, bary: ptr<function, vec3<f32>>)
 }
 
 fn processLeaf(leaf: Node, ray: Ray, result: ptr<function, Hit>){
-  let leafSize = leaf.triangles >> 24u;
-  let baseIdx = leaf.triangles & 0x00ffffff;
+  let leaf_size = leaf.triangles >> 24u;
+  let base_idx = leaf.triangles & 0x00ffffff;
   var i: i32 = 0;
   loop {
-    if (i >= leafSize) { break;}
+    if (i >= leaf_size) { break;}
     var bary = vec3<f32>();
-    let tri: Triangle = triangles.elements[baseIdx + i];
+    let tri: Triangle = triangles.elements[base_idx + i];
     let res: f32 = rayTriangleIntersect(ray, tri, &bary);
     if (res < (*result).t) {
-      (*result).index = baseIdx + i;
+      (*result).index = base_idx + i;
       (*result).t = res;
       (*result).bary = bary;
     }
@@ -195,9 +195,9 @@ fn main(
 ) {
   let wid = WID.x;
   loop {
-    let qIdx = atomicAdd(&queue_idx, 1);
-    let jid = qIdx + wid * WORKGROUP_SIZE ;
-    if (qIdx >= WORKGROUP_SIZE || jid >= render_state.num_rays) {
+    let queue_idx = atomicAdd(&shared_queue_idx, 1);
+    let jid = queue_idx + wid * WORKGROUP_SIZE ;
+    if (queue_idx >= WORKGROUP_SIZE || jid >= render_state.num_rays) {
       return;
     }
     let deferred_ray = ray_buffer.elements[jid];
