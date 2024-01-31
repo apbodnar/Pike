@@ -15,7 +15,7 @@ class PikeRenderer {
     this.scene = scene;
     this.renderState = null;
     this.resolution = resolution;
-    this.BATCH_SIZE = resolution[0] *  resolution[1];//512 * 512;
+    this.BATCH_SIZE = resolution[0] * resolution[1];//512 * 512;
     this.lastDraw = 0;
     this.numBounces = 4;
     this.elements = {
@@ -92,7 +92,7 @@ class PikeRenderer {
   async initWebGpu() {
     this.adapter = await navigator.gpu.requestAdapter();
     this.device = await this.adapter.requestDevice({
-      requiredLimits: { maxStorageBufferBindingSize: 2147483644 },
+      requiredLimits: { maxStorageBufferBindingSize: this.adapter.limits.maxStorageBufferBindingSize },
       requiredFeatures: ['shader-f16'],
     });
     this.elements.canvasElement.width = this.resolution[0];
@@ -131,29 +131,29 @@ class PikeRenderer {
     this.renderState.incrementSamples();
     this.renderState.clearColorBuffer(commandEncoder);
     const NUM_BATCHES = Math.ceil(this.resolution[0] * this.resolution[1] / this.BATCH_SIZE);
-    
+
     for (let j = 0; j < NUM_BATCHES; j++) {
-        this.renderState.clearNumHitsAndMisses(commandEncoder);
-        this.renderState.clearNumRays(commandEncoder);
-        this.cameraPass.setCameraState({
-          pos: ray.origin,
-          dir: ray.dir,
-          fov: this.camera.getFov(),
-          focalDepth: this.focalDepth,
-          apertureSize: this.apertureSize,
-          distortion: this.distortion,
-          bokeh: this.bokeh,
-          invocationOffset: j * this.BATCH_SIZE,
-        });
-        this.cameraPass.generateCommands(commandEncoder);
-        for (let i = 0; i < this.numBounces; i++) {
-          this.tracePass.generateCommands(commandEncoder);
-          this.shadePass.generateCommands(commandEncoder);
-          this.traceShadowPass.generateCommands(commandEncoder);
-          this.shadeMissPass.generateCommands(commandEncoder);
-        }
+      this.renderState.clearNumHitsAndMisses(commandEncoder);
+      this.renderState.clearNumRays(commandEncoder);
+      this.cameraPass.setCameraState({
+        pos: ray.origin,
+        dir: ray.dir,
+        fov: this.camera.getFov(),
+        focalDepth: this.focalDepth,
+        apertureSize: this.apertureSize,
+        distortion: this.distortion,
+        bokeh: this.bokeh,
+        invocationOffset: j * this.BATCH_SIZE,
+      });
+      this.cameraPass.generateCommands(commandEncoder);
+      for (let i = 0; i < this.numBounces; i++) {
+        this.tracePass.generateCommands(commandEncoder);
+        this.shadePass.generateCommands(commandEncoder);
+        this.traceShadowPass.generateCommands(commandEncoder);
+        this.shadeMissPass.generateCommands(commandEncoder);
+      }
     }
-    
+
     this.accumulatePass.generateCommands(commandEncoder);
     this.postProcessPass.generateCommands(commandEncoder);
     this.device.queue.submit([commandEncoder.finish()]);

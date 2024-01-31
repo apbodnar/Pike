@@ -5,7 +5,7 @@ import {
   WGSLPackedStructArray,
 } from "../util/structs.js";
 import { BVH } from '../bvh.js'
-import { WideBVH } from "../wide_bvh.js";
+// import { WideBVH } from "../wide_bvh.js";
 import { Vec3 } from "../util/vector.js";
 
 export class TracePass {
@@ -39,8 +39,8 @@ export class TracePass {
 
   initHitBuffer() {
     this.hitBuffer = this.device.createBuffer({
-      // 80 byte aligned hit buffer
-      size: this.cameraPass.batchSize * 20 * 4 * 2,
+      // 64 byte aligned hit buffer
+      size: this.cameraPass.batchSize * 64,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
   }
@@ -48,7 +48,7 @@ export class TracePass {
   initMissBuffer() {
     this.missBuffer = this.device.createBuffer({
       // 256 byte aligned ray count + 48 byte aligned ray buffer * (1 bounce ray + 1 shadow ray + 1 light ray) 
-      size: this.cameraPass.batchSize * 12 * 4 * 3,
+      size: this.cameraPass.batchSize * 12 * 4 * 2,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
   }

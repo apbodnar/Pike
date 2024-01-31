@@ -1,4 +1,4 @@
-const EPSILON: f32 = 0.0000001;
+const EPSILON: f32 = 0.00000001;
 const MAX_T: f32 = 100000.0;
 const NO_HIT_IDX: i32 = -1;
 const WORKGROUP_SIZE = 128;
@@ -54,7 +54,7 @@ struct DeferredRayBuffer {
 struct Hit {
   t: f32,
   index: i32,
-  bary: vec3<f32>,
+  bary_mask: u32,
   deferred_ray: DeferredRay,
 };
 
@@ -94,7 +94,7 @@ fn rayBoxIntersect(node: Node, ray: Ray) -> f32 {
   return select(MAX_T, tMin, tMax >= tMin && tMax > 0.0);
 }
 
-fn rayTriangleIntersect(ray: Ray, tri: Triangle, bary: ptr<function, vec3<f32>>) -> f32 {
+fn rayTriangleIntersect(ray: Ray, tri: Triangle, bary_mask: ptr<function, u32>) -> f32 {
   let e1: vec3<f32> = vertices.pos[tri.i2] - vertices.pos[tri.i1];
   let e2: vec3<f32> = vertices.pos[tri.i3] - vertices.pos[tri.i1];
   let p: vec3<f32> = cross(ray.dir, e2);
@@ -108,7 +108,8 @@ fn rayTriangleIntersect(ray: Ray, tri: Triangle, bary: ptr<function, vec3<f32>>)
   let v: f32 = dot(ray.dir, q) * inv_det;
   if(v < 0f || u + v > 1f){return MAX_T;}
   let dist: f32 = dot(e2, q) * inv_det;
-  (*bary) = vec3<f32>(1f - u - v, u, v);
+  (*bary_mask) = pack2x16unorm(vec2<f32>(u, v));
+  // (*bary) = vec3<f32>(1f - u - v, u, v);
   return select(MAX_T, dist, dist > EPSILON);
 }
 
@@ -118,13 +119,13 @@ fn processLeaf(leaf: Node, ray: Ray, result: ptr<function, Hit>){
   var i: i32 = 0;
   loop {
     if (i >= leaf_size) { break;}
-    var bary = vec3<f32>();
+    var bary_mask: u32 = 0;
     let tri: Triangle = triangles.elements[base_idx + i];
-    let res: f32 = rayTriangleIntersect(ray, tri, &bary);
+    let res: f32 = rayTriangleIntersect(ray, tri, &bary_mask);
     if (res < (*result).t) {
       (*result).index = base_idx + i;
       (*result).t = res;
-      (*result).bary = bary;
+      (*result).bary_mask = bary_mask;
     }
     i += 1;
   }
@@ -145,7 +146,7 @@ fn stackPop(sptr: ptr<function, i32>, tid: u32) -> i32{
 }
 
 fn intersectScene(deferred_ray: DeferredRay, tid: u32) -> Hit {
-  var result = Hit(MAX_T, NO_HIT_IDX, vec3<f32>(), deferred_ray);
+  var result = Hit(MAX_T, NO_HIT_IDX, 0, deferred_ray);
   var sptr: i32 = 0;
   stackPush(NO_HIT_IDX, &sptr, tid);
   var idx: i32 = 0;

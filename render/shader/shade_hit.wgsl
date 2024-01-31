@@ -83,7 +83,7 @@ struct DeferredRayBuffer {
 struct Hit {
   t: f32,
   index: i32,
-  bary: vec3<f32>,
+  bary_mask: u32,
   deferred_ray: DeferredRay,
 };
 
@@ -179,7 +179,7 @@ fn branchlessONB(n: vec3<f32>) -> mat3x3<f32> {
 fn getSurfaceInteraction(hit: Hit) -> SurfaceInteraction {
   let ray = hit.deferred_ray.ray;
   let tri = triangles.triangles[hit.index];
-  let attr = interpolateVertexAttribute(tri, hit.bary);
+  let attr = interpolateVertexAttribute(tri, hit.bary_mask);
   let matIdx = materials.indices[tri.mat_id];
   let mapNormal = (textureSampleLevel(atlasTex, atlasSampler, attr.uv, matIdx.normMap, 0f).xyz - vec3<f32>(0.5, 0.5, 0.0)) * vec3<f32>(2.0, 2.0, 1.0);
   var si = SurfaceInteraction();
@@ -360,8 +360,11 @@ fn powerHeuristic(pdf0: f32, pdf1: f32) -> f32 {
   return (pdf02)/(pdf02 + pdf1 * pdf1);
 }
 
-fn interpolateVertexAttribute(tri: Triangle, bary: vec3<f32>) -> VertexAttribute {
+fn interpolateVertexAttribute(tri: Triangle, bary_mask: u32) -> VertexAttribute {
   //var attr: array<VertexAttribute, 3> = attrs.attributes[i];
+  let uv = unpack2x16unorm(bary_mask);
+  let bary = vec3<f32>(1f - uv.x - uv.y, uv.x, uv.y);
+
   let tangents = mat3x3<f32>(
     unpack4x8snorm(attrs.attributes[tri.i1].tangent).xyz, 
     unpack4x8snorm(attrs.attributes[tri.i2].tangent).xyz, 
